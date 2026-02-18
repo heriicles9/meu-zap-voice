@@ -1,0 +1,21 @@
+# Pastas de dependências (muito pesadas para o Git)
+node_modules/
+
+# Arquivos de ambiente com SENHAS (NUNCA suba isso!)
+.env
+
+# Sessões do WhatsApp (Contém o seu login pessoal)
+sessions/
+auth_info_baileys/
+
+# Logs e arquivos temporários
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Banco de dados local (já que agora usamos MongoDB)
+database.json
+fluxo.json
+
+# Arquivos de upload locais
+uploads/
