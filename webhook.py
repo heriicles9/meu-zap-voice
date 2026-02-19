@@ -13,10 +13,8 @@ MONGO_URI = os.environ.get("MONGO_URI")
 # --- CONEXÃO BANCO ---
 try:
     client = pymongo.MongoClient(MONGO_URI)
-    print("✅ Conectado ao MongoDB no Cérebro!")
 except Exception as e:
     client = None
-    print("❌ Erro no MongoDB:", e)
 
 def enviar_mensagem(instancia, numero, texto):
     url = f"{EVO_URL}/message/sendText/{instancia}"
@@ -28,32 +26,34 @@ def enviar_mensagem(instancia, numero, texto):
             "text": texto
         }
     }
-    
-    print(f"📤 Tentando enviar mensagem para {numero}: {texto}")
-    res = requests.post(url, json=data, headers=headers)
-    print(f"📠 Resposta da API ao enviar: {res.status_code} - {res.text}")
+    print(f"📤 Disparando para o número real: {numero}")
+    requests.post(url, json=data, headers=headers)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     if not client: return jsonify({"erro": "Sem banco"}), 500
     
     dados = request.json
-    print("\n=========================================")
-    print("🚨 RAIO-X MÁXIMO ATIVADO! PACOTE COMPLETO:")
-    print(dados) # ISSO AQUI VAI MOSTRAR TODOS OS DADOS ESCONDIDOS
-    print("=========================================\n")
-    
     evento = dados.get('event', '')
     
     if evento.lower() == 'messages.upsert':
         instancia = dados.get('instance')
+        
+        # Pega os dados da mensagem
         msg_data = dados.get('data', {}).get('message', {})
         key = dados.get('data', {}).get('key', {})
         
         if key.get('fromMe'):
             return jsonify({"status": "ignorado"}), 200
             
-        numero = key.get('remoteJid')
+        # 🚨 O PULO DO GATO: Procurar o número real!
+        # Tenta pegar do 'sender' primeiro. Se não achar, pega do 'remoteJid'
+        numero_bruto = dados.get('data', {}).get('sender')
+        if not numero_bruto:
+            numero_bruto = key.get('remoteJid')
+            
+        # Limpa o "@s.whatsapp.net" ou "@lid" e pega SÓ OS NÚMEROS!
+        numero_real = numero_bruto.split('@')[0]
         
         texto_recebido = ""
         if "conversation" in msg_data:
@@ -71,12 +71,13 @@ def webhook():
             return jsonify({"status": "fluxo vazio"}), 200
             
         blocos = fluxo_doc["blocos"]
-        sessao = db["sessoes"].find_one({"numero": numero, "instancia": instancia})
+        sessao = db["sessoes"].find_one({"numero": numero_real, "instancia": instancia})
         bloco_atual = None
         
+        # Lógica do Roteiro (O que o robô vai responder)
         if not sessao:
             bloco_atual = blocos[0]
-            db["sessoes"].insert_one({"numero": numero, "instancia": instancia, "bloco_id": bloco_atual["id"]})
+            db["sessoes"].insert_one({"numero": numero_real, "instancia": instancia, "bloco_id": bloco_atual["id"]})
         else:
             bloco_id_atual = sessao["bloco_id"]
             bloco_atual = next((b for b in blocos if b["id"] == bloco_id_atual), None)
@@ -100,8 +101,9 @@ def webhook():
                         bloco_atual = novo_bloco
                         db["sessoes"].update_one({"_id": sessao["_id"]}, {"$set": {"bloco_id": bloco_atual["id"]}})
         
+        # Responde usando o número real limpo!
         if bloco_atual:
-            enviar_mensagem(instancia, numero, bloco_atual["msg"])
+            enviar_mensagem(instancia, numero_real, bloco_atual["msg"])
             
     return jsonify({"status": "ok"}), 200
 
