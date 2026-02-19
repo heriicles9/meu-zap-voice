@@ -2,3 +2,4 @@ streamlit
 pymongo
 dnspython
 graphviz
+requests
