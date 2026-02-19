@@ -3,9 +3,15 @@ import time
 import pymongo
 import os
 import graphviz
+import requests
+import base64
 
-# --- CONFIGURAÇÃO ---
+# --- CONFIGURAÇÕES ---
 st.set_page_config(page_title="ZapVoice Builder", layout="wide", page_icon="🤖")
+
+# --- CREDENCIAIS DA EVOLUTION API ---
+EVO_URL = "https://api-zap-motor.onrender.com"
+EVO_KEY = "Mestra123"
 
 # --- CONEXÃO BANCO ---
 @st.cache_resource
@@ -37,6 +43,31 @@ def salvar_fluxo_db(projeto_id, lista_blocos):
     )
     return True
 
+# --- FUNÇÕES DO WHATSAPP (EVOLUTION API) ---
+def obter_qr_code(projeto_id):
+    headers = {"apikey": EVO_KEY}
+    
+    try:
+        # 1. Tenta pegar o QR code se a instância já existir
+        res = requests.get(f"{EVO_URL}/instance/connect/{projeto_id}", headers=headers)
+        if res.status_code == 200 and "base64" in res.json():
+            return res.json()["base64"]
+        
+        # 2. Se não existir (Erro 404), manda criar uma nova
+        data = {"instanceName": projeto_id, "qrcode": True, "token": projeto_id}
+        res_create = requests.post(f"{EVO_URL}/instance/create", json=data, headers=headers)
+        
+        if res_create.status_code in [200, 201]:
+            time.sleep(2) # Dá um tempinho para o motor gerar a imagem
+            res_conn = requests.get(f"{EVO_URL}/instance/connect/{projeto_id}", headers=headers)
+            if res_conn.status_code == 200 and "base64" in res_conn.json():
+                return res_conn.json()["base64"]
+                
+    except Exception as e:
+        return f"ERRO: {e}"
+        
+    return None
+
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("🔐 Acesso")
@@ -51,8 +82,8 @@ if 'fluxo' not in st.session_state:
 if 'indice_edicao' not in st.session_state:
     st.session_state.indice_edicao = None
 
-# --- HEADER COM QR CODE AJUSTADO ---
-c1, c2, c3 = st.columns([4, 1, 1.2]) # Ajuste de proporção para o botão não ficar espremido
+# --- HEADER COM O QR CODE REAL ---
+c1, c2, c3 = st.columns([4, 1, 1.2])
 
 with c1:
     st.title("ZapVoice Builder 🤖☁️")
@@ -61,23 +92,28 @@ with c2:
     if client: st.success("🟢 DB ON")
     else: st.error("🔴 DB OFF")
 with c3:
-    # Popover com tamanho controlado
     with st.popover("📲 Conectar WhatsApp", use_container_width=True):
         st.write("### Conectar Sessão")
-        st.warning("⚠️ Este QR Code é uma DEMONSTRAÇÃO VISUAL.")
-        st.caption("Para conexão real, é necessária integração com API.")
         
-        # QR Code menor (width=180) e centralizado
-        qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=ZapVoice_{projeto_id}"
-        st.image(qr_url, width=180) # Definindo largura fixa para não ficar gigante
-        st.caption(f"ID: {projeto_id}")
+        if st.button("Gerar QR Code Real", use_container_width=True):
+            with st.spinner("Ligando o motor..."):
+                qr_b64 = obter_qr_code(projeto_id)
+                
+                if qr_b64 and not qr_b64.startswith("ERRO"):
+                    # Limpa o prefixo do base64 se vier da API e mostra a imagem
+                    if "," in qr_b64:
+                        qr_b64 = qr_b64.split(",")[1]
+                    st.image(base64.b64decode(qr_b64), caption="Escaneie agora!", use_column_width=True)
+                    st.success("Motor conectado!")
+                else:
+                    st.error("Falha ao buscar QR Code. Verifique se o motor acordou.")
+                    if qr_b64: st.caption(qr_b64)
 
 st.divider()
 
 # --- EDITOR E VISUALIZAÇÃO ---
 col_editor, col_visual = st.columns([1, 1.5])
 
-# Lógica de edição
 val_id, val_msg, val_opcoes, val_tipo_index = "", "", "", 0
 if st.session_state.indice_edicao is not None:
     try:
@@ -98,13 +134,13 @@ with col_editor:
             upl = st.file_uploader("Arquivo", type=['mp3','ogg'])
             content = f"[Audio] {upl.name}" if upl else val_msg
         elif btype == "Menu":
-            content = st.text_area("Mensagem", value=val_msg)
-            routing = st.text_area("Se (Botão) > Então (ID)", value=val_opcoes, placeholder="Vendas > vendas_bloco")
+            content = st.text_area("Mensagem do Menu", value=val_msg)
+            routing = st.text_area("Botões (Botão > destino)", value=val_opcoes, placeholder="Vendas > bloco_vendas")
         else:
-            content = st.text_area("Mensagem", value=val_msg)
+            content = st.text_area("Mensagem de Texto", value=val_msg)
             routing = st.text_input("Próximo ID", value=val_opcoes)
 
-        if st.button("💾 Salvar", type="primary", use_container_width=True):
+        if st.button("💾 Salvar Bloco", type="primary", use_container_width=True):
             if bid and content:
                 novo = {"id": bid, "tipo": btype, "msg": content, "opcoes": routing}
                 if st.session_state.indice_edicao is not None:
