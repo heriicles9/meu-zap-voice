@@ -3,3 +3,5 @@ pymongo
 dnspython
 graphviz
 requests
+flask
+gunicorn
