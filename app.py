@@ -46,25 +46,33 @@ def salvar_fluxo_db(projeto_id, lista_blocos):
 # --- FUNÇÕES DO WHATSAPP (EVOLUTION API) ---
 def obter_qr_code(projeto_id):
     headers = {"apikey": EVO_KEY}
+    # Limpa o nome (a API prefere nomes sem traços ou espaços)
+    instancia = projeto_id.replace(" ", "").replace("-", "")
     
     try:
-        # 1. Tenta pegar o QR code se a instância já existir
-        res = requests.get(f"{EVO_URL}/instance/connect/{projeto_id}", headers=headers)
-        if res.status_code == 200 and "base64" in res.json():
-            return res.json()["base64"]
-        
-        # 2. Se não existir (Erro 404), manda criar uma nova
-        data = {"instanceName": projeto_id, "qrcode": True, "token": projeto_id}
+        # 1. Tenta CRIAR a instância já pedindo o QR Code (A v1.8.2 entrega na hora!)
+        data = {"instanceName": instancia, "qrcode": True, "token": instancia}
         res_create = requests.post(f"{EVO_URL}/instance/create", json=data, headers=headers)
         
         if res_create.status_code in [200, 201]:
-            time.sleep(2) # Dá um tempinho para o motor gerar a imagem
-            res_conn = requests.get(f"{EVO_URL}/instance/connect/{projeto_id}", headers=headers)
-            if res_conn.status_code == 200 and "base64" in res_conn.json():
-                return res_conn.json()["base64"]
+            dados = res_create.json()
+            if "qrcode" in dados and "base64" in dados["qrcode"]:
+                return dados["qrcode"]["base64"]
+        
+        # 2. Se a instância JÁ EXISTIR, pedimos para conectar
+        time.sleep(1)
+        res_conn = requests.get(f"{EVO_URL}/instance/connect/{instancia}", headers=headers)
+        
+        if res_conn.status_code == 200:
+            dados_conn = res_conn.json()
+            if "base64" in dados_conn:
+                return dados_conn["base64"]
                 
+        # Se falhar, devolve o erro EXATO na tela para não ficarmos adivinhando
+        return f"ERRO API: {res_create.status_code} | {res_conn.text}"
+            
     except Exception as e:
-        return f"ERRO: {e}"
+        return f"ERRO SISTEMA: {e}"
         
     return None
 
@@ -83,7 +91,6 @@ if 'indice_edicao' not in st.session_state:
     st.session_state.indice_edicao = None
 
 # --- HEADER COM O QR CODE REAL (AJUSTADO O TAMANHO) ---
-# Mudei a proporção para 2.5, 1, 1.5 para o botão não espremer!
 c1, c2, c3 = st.columns([2.5, 1, 1.5])
 
 with c1:
@@ -97,17 +104,17 @@ with c3:
         st.write("### Conectar Sessão")
         
         if st.button("Gerar QR Code Real", use_container_width=True):
-            with st.spinner("Ligando o motor..."):
+            with st.spinner("Ligando o motor e buscando QR Code..."):
                 qr_b64 = obter_qr_code(projeto_id)
                 
                 if qr_b64 and not qr_b64.startswith("ERRO"):
                     if "," in qr_b64:
                         qr_b64 = qr_b64.split(",")[1]
                     st.image(base64.b64decode(qr_b64), caption="Escaneie agora!", use_column_width=True)
-                    st.success("Motor conectado!")
+                    st.success("Motor conectado! Tudo pronto.")
                 else:
-                    st.error("Falha ao buscar QR Code. Verifique se o motor acordou.")
-                    if qr_b64: st.caption(qr_b64)
+                    st.error("Falha ao buscar QR Code.")
+                    if qr_b64: st.code(qr_b64) # Mostrar o erro exato caso falhe
 
 st.divider()
 
