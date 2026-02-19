@@ -82,8 +82,9 @@ if 'fluxo' not in st.session_state:
 if 'indice_edicao' not in st.session_state:
     st.session_state.indice_edicao = None
 
-# --- HEADER COM O QR CODE REAL ---
-c1, c2, c3 = st.columns([4, 1, 1.2])
+# --- HEADER COM O QR CODE REAL (AJUSTADO O TAMANHO) ---
+# Mudei a proporção para 2.5, 1, 1.5 para o botão não espremer!
+c1, c2, c3 = st.columns([2.5, 1, 1.5])
 
 with c1:
     st.title("ZapVoice Builder 🤖☁️")
@@ -100,7 +101,6 @@ with c3:
                 qr_b64 = obter_qr_code(projeto_id)
                 
                 if qr_b64 and not qr_b64.startswith("ERRO"):
-                    # Limpa o prefixo do base64 se vier da API e mostra a imagem
                     if "," in qr_b64:
                         qr_b64 = qr_b64.split(",")[1]
                     st.image(base64.b64decode(qr_b64), caption="Escaneie agora!", use_column_width=True)
