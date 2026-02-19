@@ -22,17 +22,15 @@ def enviar_mensagem(instancia, numero, texto):
     url = f"{EVO_URL}/message/sendText/{instancia}"
     headers = {"apikey": EVO_KEY}
     
-    # O segredo: corta o "@" e pega só os números puros!
-    numero_limpo = numero.split('@')[0]
-    
+    # Mandamos o número/ID exatamente do jeito que o WhatsApp nos entregou!
     data = {
-        "number": numero_limpo, 
+        "number": numero, 
         "textMessage": {
             "text": texto
         }
     }
     
-    print(f"📤 Enviando mensagem para {numero_limpo}: {texto}")
+    print(f"📤 Enviando mensagem para {numero}: {texto}")
     res = requests.post(url, json=data, headers=headers)
     print(f"📠 Resposta da API ao enviar: {res.status_code} - {res.text}")
     
