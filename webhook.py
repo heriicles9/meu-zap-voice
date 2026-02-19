@@ -21,7 +21,15 @@ except Exception as e:
 def enviar_mensagem(instancia, numero, texto):
     url = f"{EVO_URL}/message/sendText/{instancia}"
     headers = {"apikey": EVO_KEY}
-    data = {"number": numero, "text": texto}
+    
+    # Formato exato que a versão 1.8.2 exige!
+    data = {
+        "number": numero, 
+        "textMessage": {
+            "text": texto
+        }
+    }
+    
     print(f"📤 Enviando mensagem para {numero}: {texto}")
     res = requests.post(url, json=data, headers=headers)
     print(f"📠 Resposta da API ao enviar: {res.status_code} - {res.text}")
