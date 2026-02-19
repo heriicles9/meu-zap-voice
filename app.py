@@ -13,6 +13,9 @@ st.set_page_config(page_title="ZapVoice Builder", layout="wide", page_icon="🤖
 EVO_URL = "https://api-zap-motor.onrender.com"
 EVO_KEY = "Mestra123"
 
+# --- URL DO SEU WEBHOOK (CÉREBRO) ---
+WEBHOOK_URL = "https://meu-zap-webhook.onrender.com/webhook"
+
 # --- CONEXÃO BANCO ---
 @st.cache_resource
 def init_connection():
@@ -46,11 +49,9 @@ def salvar_fluxo_db(projeto_id, lista_blocos):
 # --- FUNÇÕES DO WHATSAPP (EVOLUTION API) ---
 def obter_qr_code(projeto_id):
     headers = {"apikey": EVO_KEY}
-    # Limpa o nome (a API prefere nomes sem traços ou espaços)
     instancia = projeto_id.replace(" ", "").replace("-", "")
     
     try:
-        # 1. Tenta CRIAR a instância já pedindo o QR Code (A v1.8.2 entrega na hora!)
         data = {"instanceName": instancia, "qrcode": True, "token": instancia}
         res_create = requests.post(f"{EVO_URL}/instance/create", json=data, headers=headers)
         
@@ -59,7 +60,6 @@ def obter_qr_code(projeto_id):
             if "qrcode" in dados and "base64" in dados["qrcode"]:
                 return dados["qrcode"]["base64"]
         
-        # 2. Se a instância JÁ EXISTIR, pedimos para conectar
         time.sleep(1)
         res_conn = requests.get(f"{EVO_URL}/instance/connect/{instancia}", headers=headers)
         
@@ -68,13 +68,31 @@ def obter_qr_code(projeto_id):
             if "base64" in dados_conn:
                 return dados_conn["base64"]
                 
-        # Se falhar, devolve o erro EXATO na tela para não ficarmos adivinhando
         return f"ERRO API: {res_create.status_code} | {res_conn.text}"
             
     except Exception as e:
         return f"ERRO SISTEMA: {e}"
         
     return None
+
+def ativar_webhook(projeto_id):
+    headers = {"apikey": EVO_KEY}
+    instancia = projeto_id.replace(" ", "").replace("-", "")
+    
+    data = {
+        "enabled": True,
+        "url": WEBHOOK_URL,
+        "webhookByEvents": False,
+        "events": ["MESSAGES_UPSERT"]
+    }
+    
+    try:
+        res = requests.post(f"{EVO_URL}/webhook/set/{instancia}", json=data, headers=headers)
+        if res.status_code in [200, 201]:
+            return True
+        return False
+    except:
+        return False
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -90,7 +108,7 @@ if 'fluxo' not in st.session_state:
 if 'indice_edicao' not in st.session_state:
     st.session_state.indice_edicao = None
 
-# --- HEADER COM O QR CODE REAL (AJUSTADO O TAMANHO) ---
+# --- HEADER COM O QR CODE E WEBHOOK ---
 c1, c2, c3 = st.columns([2.5, 1, 1.5])
 
 with c1:
@@ -103,18 +121,29 @@ with c3:
     with st.popover("📲 Conectar WhatsApp", use_container_width=True):
         st.write("### Conectar Sessão")
         
-        if st.button("Gerar QR Code Real", use_container_width=True):
-            with st.spinner("Ligando o motor e buscando QR Code..."):
+        if st.button("1. Gerar QR Code Real", use_container_width=True):
+            with st.spinner("Ligando o motor..."):
                 qr_b64 = obter_qr_code(projeto_id)
                 
                 if qr_b64 and not qr_b64.startswith("ERRO"):
                     if "," in qr_b64:
                         qr_b64 = qr_b64.split(",")[1]
-                    st.image(base64.b64decode(qr_b64), caption="Escaneie agora!", use_column_width=True)
+                    st.image(base64.b64decode(qr_b64), caption="Escaneie agora!", use_container_width=True)
                     st.success("Motor conectado! Tudo pronto.")
                 else:
                     st.error("Falha ao buscar QR Code.")
-                    if qr_b64: st.code(qr_b64) # Mostrar o erro exato caso falhe
+                    if qr_b64: st.code(qr_b64)
+                    
+        st.divider()
+        
+        # O NOVO BOTÃO MÁGICO AQUI
+        if st.button("2. 🎧 Ativar Robô (Webhook)", use_container_width=True, type="primary"):
+            with st.spinner("Conectando Cérebro ao Motor..."):
+                sucesso = ativar_webhook(projeto_id)
+                if sucesso:
+                    st.success("Robô ativado! Ele já está ouvindo as mensagens.")
+                else:
+                    st.error("Erro ao ativar. Verifique se o celular já leu o QR Code.")
 
 st.divider()
 
