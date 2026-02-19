@@ -22,18 +22,20 @@ def enviar_mensagem(instancia, numero, texto):
     url = f"{EVO_URL}/message/sendText/{instancia}"
     headers = {"apikey": EVO_KEY}
     
-    # Formato exato que a versão 1.8.2 exige!
+    # O segredo: corta o "@" e pega só os números puros!
+    numero_limpo = numero.split('@')[0]
+    
     data = {
-        "number": numero, 
+        "number": numero_limpo, 
         "textMessage": {
             "text": texto
         }
     }
     
-    print(f"📤 Enviando mensagem para {numero}: {texto}")
+    print(f"📤 Enviando mensagem para {numero_limpo}: {texto}")
     res = requests.post(url, json=data, headers=headers)
     print(f"📠 Resposta da API ao enviar: {res.status_code} - {res.text}")
-
+    
 @app.route('/webhook', methods=['POST'])
 def webhook():
     if not client: return jsonify({"erro": "Sem banco"}), 500
