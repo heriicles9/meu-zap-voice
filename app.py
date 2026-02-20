@@ -7,9 +7,9 @@ import requests
 import base64
 
 # --- CONFIGURAÇÕES DA PÁGINA ---
-st.set_page_config(page_title="ZapFluxo SaaS", layout="wide", page_icon="🤖")
+st.set_page_config(page_title="ZapFluxo SaaS", layout="wide", page_icon="⚡")
 
-# --- CONEXÃO BANCO (Movida para cima para o Login funcionar) ---
+# --- CONEXÃO BANCO ---
 @st.cache_resource
 def init_connection():
     try:
@@ -31,7 +31,7 @@ if not st.session_state["logado"]:
     col_vazia1, col_centro, col_vazia2 = st.columns([1, 2, 1])
     
     with col_centro:
-        st.title("☁️ ZapFluxo")
+        st.title("☁️ Plataforma ZapFluxo")
         st.write("Acesse ou crie a conta da sua empresa.")
         
         if not client:
@@ -64,10 +64,8 @@ if not st.session_state["logado"]:
                 pass_reg = st.text_input("Criar Senha", type="password", key="preg")
                 if st.button("Criar e Entrar", type="primary", use_container_width=True):
                     if user_reg and pass_reg:
-                        if " " in user_reg:
-                            st.error("❌ O nome de usuário não pode ter espaços!")
-                        elif colecao_users.find_one({"_id": user_reg}):
-                            st.error("❌ Esse usuário já existe! Escolha outro nome.")
+                        if " " in user_reg: st.error("❌ O nome não pode ter espaços!")
+                        elif colecao_users.find_one({"_id": user_reg}): st.error("❌ Esse usuário já existe!")
                         else:
                             colecao_users.insert_one({"_id": user_reg, "senha": pass_reg})
                             st.session_state["logado"] = True
@@ -75,16 +73,12 @@ if not st.session_state["logado"]:
                             st.success("✅ Conta criada com sucesso! Entrando...")
                             time.sleep(1)
                             st.rerun()
-                            
-    st.stop() # Bloqueia o código para quem não está logado!
-# --- FIM DO SISTEMA DE LOGIN ---
+    st.stop()
 
-# --- CREDENCIAIS DA EVOLUTION API ---
+# --- CREDENCIAIS ---
 EVO_URL = "https://api-zap-motor.onrender.com"
 EVO_KEY = "Mestra123"
 WEBHOOK_URL = "https://meu-zap-webhook.onrender.com/webhook"
-
-# 🚨 O projeto_id agora é o nome do usuário logado!
 projeto_id = st.session_state["usuario"]
 
 # --- FUNÇÕES DB ---
@@ -104,105 +98,74 @@ def salvar_fluxo_db(proj_id, lista_blocos):
     )
     return True
 
-# --- FUNÇÕES DO WHATSAPP (EVOLUTION API) ---
+# --- FUNÇÕES EVOLUTION API ---
 def obter_qr_code(proj_id):
     headers = {"apikey": EVO_KEY}
     instancia = proj_id.replace(" ", "").replace("-", "")
-    
     try:
         data = {"instanceName": instancia, "qrcode": True, "token": instancia}
         res_create = requests.post(f"{EVO_URL}/instance/create", json=data, headers=headers)
-        
         if res_create.status_code in [200, 201]:
             dados = res_create.json()
-            if "qrcode" in dados and "base64" in dados["qrcode"]:
-                return dados["qrcode"]["base64"]
-        
+            if "qrcode" in dados and "base64" in dados["qrcode"]: return dados["qrcode"]["base64"]
         time.sleep(1)
         res_conn = requests.get(f"{EVO_URL}/instance/connect/{instancia}", headers=headers)
-        
         if res_conn.status_code == 200:
             dados_conn = res_conn.json()
-            if "base64" in dados_conn:
-                return dados_conn["base64"]
-                
+            if "base64" in dados_conn: return dados_conn["base64"]
         return f"ERRO API: {res_create.status_code} | {res_conn.text}"
-    except Exception as e:
-        return f"ERRO SISTEMA: {e}"
+    except Exception as e: return f"ERRO: {e}"
     return None
 
 def ativar_webhook(proj_id):
     headers = {"apikey": EVO_KEY}
     instancia = proj_id.replace(" ", "").replace("-", "")
-    data = {
-        "enabled": True,
-        "url": WEBHOOK_URL,
-        "webhookByEvents": False,
-        "events": ["MESSAGES_UPSERT"]
-    }
-    try:
-        res = requests.post(f"{EVO_URL}/webhook/set/{instancia}", json=data, headers=headers)
-        return res.status_code in [200, 201]
-    except:
-        return False
+    data = {"enabled": True, "url": WEBHOOK_URL, "webhookByEvents": False, "events": ["MESSAGES_UPSERT"]}
+    try: return requests.post(f"{EVO_URL}/webhook/set/{instancia}", json=data, headers=headers).status_code in [200, 201]
+    except: return False
 
-# --- SIDEBAR (O NOVO MENU DO CLIENTE) ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("👤 Meu Perfil")
     st.write(f"Empresa conectada: **{projeto_id}**")
-    
     if st.button("🔄 Sincronizar Dados", use_container_width=True):
         st.session_state.fluxo = carregar_fluxo_db(projeto_id)
         st.rerun()
-        
     st.divider()
-    
     if st.button("🚪 Sair do Painel", use_container_width=True):
         st.session_state["logado"] = False
         st.session_state["usuario"] = ""
         st.rerun()
 
 # --- ESTADO E MEMÓRIA ---
-if 'fluxo' not in st.session_state:
-    st.session_state.fluxo = carregar_fluxo_db(projeto_id)
-if 'indice_edicao' not in st.session_state:
-    st.session_state.indice_edicao = None
-if 'num_opcoes' not in st.session_state:
-    st.session_state.num_opcoes = 2 
+if 'fluxo' not in st.session_state: st.session_state.fluxo = carregar_fluxo_db(projeto_id)
+if 'indice_edicao' not in st.session_state: st.session_state.indice_edicao = None
+if 'num_opcoes' not in st.session_state: st.session_state.num_opcoes = 2 
 
-# --- HEADER COM O QR CODE E WEBHOOK ---
+# --- HEADER ---
 c1, c2, c3 = st.columns([2.5, 1, 1.5])
-
 with c1:
-    st.title("ZapVoice Builder 🤖☁️")
+    st.title("ZapFluxo Builder ⚡☁️")
     st.caption(f"Trabalhando no cérebro de: **{projeto_id}**")
 with c2:
     if client: st.success("🟢 DB ON")
     else: st.error("🔴 DB OFF")
 with c3:
     with st.popover("📲 Conectar WhatsApp", use_container_width=True):
-        st.write("### Conectar Sessão")
-        
         if st.button("1. Gerar QR Code Real", use_container_width=True):
             with st.spinner("Ligando o motor..."):
                 qr_b64 = obter_qr_code(projeto_id)
                 if qr_b64 and not qr_b64.startswith("ERRO"):
-                    if "," in qr_b64:
-                        qr_b64 = qr_b64.split(",")[1]
+                    if "," in qr_b64: qr_b64 = qr_b64.split(",")[1]
                     st.image(base64.b64decode(qr_b64), caption="Escaneie agora!", use_container_width=True)
-                    st.success("Motor conectado! Tudo pronto.")
+                    st.success("Motor conectado!")
                 else:
                     st.error("Falha ao buscar QR Code.")
-                    if qr_b64: st.code(qr_b64)
-                    
         st.divider()
         if st.button("2. 🎧 Ativar Robô (Webhook)", use_container_width=True, type="primary"):
             with st.spinner("Conectando Cérebro ao Motor..."):
-                if ativar_webhook(projeto_id):
-                    st.success("Robô ativado! Ele já está ouvindo as mensagens.")
-                else:
-                    st.error("Erro ao ativar. Verifique se o celular já leu o QR Code.")
-
+                if ativar_webhook(projeto_id): st.success("Robô ativado!")
+                else: st.error("Erro ao ativar. Verifique o QR Code.")
 st.divider()
 
 # --- EDITOR E VISUALIZAÇÃO ---
@@ -212,8 +175,9 @@ val_id, val_msg, val_opcoes, val_tipo_index = "", "", "", 0
 if st.session_state.indice_edicao is not None:
     try:
         b = st.session_state.fluxo[st.session_state.indice_edicao]
-        val_id, val_msg, val_opcoes = b['id'], b['msg'], b.get('opcoes', '')
-        tipos = ["Texto", "Menu", "Áudio"]
+        val_id, val_msg, val_opcoes = b['id'], b.get('msg', ''), b.get('opcoes', '')
+        # 🚨 NOVA OPÇÃO DE IMAGEM ADICIONADA AQUI!
+        tipos = ["Texto", "Menu", "Áudio", "Imagem"]
         val_tipo_index = tipos.index(b['tipo']) if b['tipo'] in tipos else 0
     except: st.session_state.indice_edicao = None
 
@@ -221,24 +185,27 @@ with col_editor:
     with st.container(border=True):
         st.subheader("📝 Configurar Bloco")
         bid = st.text_input("ID do Bloco", value=val_id)
-        btype = st.selectbox("Tipo", ["Texto", "Menu", "Áudio"], index=val_tipo_index)
+        btype = st.selectbox("Tipo", ["Texto", "Menu", "Áudio", "Imagem"], index=val_tipo_index)
         
         content, routing = "", ""
         upl = None
         
         if btype == "Áudio":
             upl = st.file_uploader("Arquivo de Áudio", type=['mp3','ogg'])
-            # Se não subiu arquivo novo, mas já tinha um texto salvo, ele mostra "Áudio salvo"
             content = f"🎵 [Novo Áudio: {upl.name}]" if upl else (val_msg if val_msg else "🎵 [Áudio salvo no Banco]")
+            routing = st.text_input("Próximo ID Automático", value=val_opcoes)
+            
+        elif btype == "Imagem":
+            upl = st.file_uploader("Foto/Imagem (JPG, PNG)", type=['png', 'jpg', 'jpeg'])
+            content = st.text_area("Legenda da Imagem (Opcional)", value=val_msg if not val_msg.startswith("📸") else "")
+            if not content and not upl and val_msg: content = val_msg # Mantem a legenda salva
             routing = st.text_input("Próximo ID Automático", value=val_opcoes)
             
         elif btype == "Menu":
             content = st.text_area("Mensagem do Menu", value=val_msg)
             st.write("---")
-            
             col_titulo, col_add, col_rem = st.columns([2, 1, 1])
-            with col_titulo:
-                st.write("🔘 **Botões de Resposta**")
+            with col_titulo: st.write("🔘 **Botões de Resposta**")
             with col_add:
                 if st.button("➕ Mais", use_container_width=True):
                     st.session_state.num_opcoes += 1
@@ -261,16 +228,10 @@ with col_editor:
 
             col_btn, col_dest = st.columns(2)
             lista_opcoes = []
-            
             for idx in range(st.session_state.num_opcoes):
-                with col_btn:
-                    btn_val = st.text_input(f"Opção {idx+1}", value=b_vals[idx], key=f"input_btn_{idx}")
-                with col_dest:
-                    dest_val = st.text_input(f"Destino {idx+1}", value=d_vals[idx], key=f"input_dest_{idx}")
-                
-                if btn_val and dest_val:
-                    lista_opcoes.append(f"{btn_val.strip()} > {dest_val.strip()}")
-            
+                with col_btn: btn_val = st.text_input(f"Opção {idx+1}", value=b_vals[idx], key=f"input_btn_{idx}")
+                with col_dest: dest_val = st.text_input(f"Destino {idx+1}", value=d_vals[idx], key=f"input_dest_{idx}")
+                if btn_val and dest_val: lista_opcoes.append(f"{btn_val.strip()} > {dest_val.strip()}")
             routing = "\n".join(lista_opcoes)
             
         else: # Tipo TEXTO
@@ -278,18 +239,19 @@ with col_editor:
             routing = st.text_input("Próximo ID Automático", value=val_opcoes)
 
         if st.button("💾 Salvar Bloco", type="primary", use_container_width=True):
-            if bid and content:
+            if bid: # Agora a legenda pode ficar em branco!
                 novo = {"id": bid, "tipo": btype, "msg": content, "opcoes": routing}
                 
-                # 🚨 A MÁGICA DO ÁUDIO AQUI!
-                if btype == "Áudio":
+                # 🚨 MÁGICA: Converte Áudio OU Imagem para o Banco de Dados!
+                if btype in ["Áudio", "Imagem"]:
                     if upl is not None:
-                        # Converte o arquivo de áudio em código texto (Base64) e guarda no banco!
                         novo["arquivo_b64"] = base64.b64encode(upl.read()).decode('utf-8')
                     elif st.session_state.indice_edicao is not None:
-                        # Se não subiu arquivo novo, copia o que já estava lá para não perder
                         bloco_antigo = st.session_state.fluxo[st.session_state.indice_edicao]
                         novo["arquivo_b64"] = bloco_antigo.get("arquivo_b64", "")
+                        
+                    if btype == "Imagem" and not content:
+                        novo["msg"] = "📸 [Imagem sem legenda]" # Previne erros se a legenda ficar em branco
                 
                 if st.session_state.indice_edicao is not None:
                     st.session_state.fluxo[st.session_state.indice_edicao] = novo
