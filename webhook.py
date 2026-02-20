@@ -15,65 +15,77 @@ MONGO_URI = os.environ.get("MONGO_URI")
 # --- CONEXÃO BANCO ---
 try:
     client = pymongo.MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-    client.admin.command('ping') # Força um teste rápido no banco!
+    client.admin.command('ping') 
     print("✅ Banco de Dados OK!")
 except Exception as e:
     client = None
     print(f"❌ Erro no Banco: {e}")
 
-# 🌐 ROTA DE TESTE (Para você abrir no navegador e ver se está online!)
 @app.route('/', methods=['GET'])
 def home():
     return "<h1>🧠 O Cérebro do ZapFluxo está Online e Operante! ⚡</h1>"
 
-# 1️⃣ FUNÇÃO DE ENVIAR TEXTO (Agora com limite de espera!)
+# 1️⃣ FUNÇÃO DE ENVIAR TEXTO
 def enviar_mensagem(instancia, numero, texto):
     headers = {"apikey": EVO_KEY}
-    
     url_presenca = f"{EVO_URL}/chat/sendPresence/{instancia}"
-    payload_presenca = {"number": numero, "options": {"delay": 2000, "presence": "composing"}}
-    try:
-        # Tenta acionar o digitando. Se o motor demorar mais de 10 segs, ignora para não travar!
-        requests.post(url_presenca, json=payload_presenca, headers=headers, timeout=10)
+    try: requests.post(url_presenca, json={"number": numero, "options": {"delay": 2000, "presence": "composing"}}, headers=headers, timeout=10)
     except: pass 
-    
     time.sleep(2)
     
     url = f"{EVO_URL}/message/sendText/{instancia}"
-    data = {"number": numero, "textMessage": {"text": texto}}
     print(f"📤 Disparando a mensagem: {texto}")
-    try:
-        res = requests.post(url, json=data, headers=headers, timeout=30)
-        print(f"📠 Confirmação da API: {res.status_code} - {res.text}")
-    except Exception as e:
-        print("💥 Motor demorou para responder! Evitando congelamento do cérebro.")
+    try: requests.post(url, json={"number": numero, "textMessage": {"text": texto}}, headers=headers, timeout=30)
+    except: pass
 
 # 2️⃣ FUNÇÃO DE ENVIAR ÁUDIO 
 def enviar_audio(instancia, numero, b64_audio):
     headers = {"apikey": EVO_KEY}
-    
     url_presenca = f"{EVO_URL}/chat/sendPresence/{instancia}"
-    payload_presenca = {"number": numero, "options": {"delay": 3000, "presence": "recording"}}
-    try:
-        requests.post(url_presenca, json=payload_presenca, headers=headers, timeout=10)
+    try: requests.post(url_presenca, json={"number": numero, "options": {"delay": 3000, "presence": "recording"}}, headers=headers, timeout=10)
     except: pass
-    
     time.sleep(3)
     
     url = f"{EVO_URL}/message/sendWhatsAppAudio/{instancia}"
     data = {"number": numero, "options": {"encoding": True}, "audioMessage": {"audio": b64_audio}}
     print(f"🎤 Disparando ÁUDIO para: {numero}")
-    try:
+    try: requests.post(url, json=data, headers=headers, timeout=30)
+    except: pass
+
+# 3️⃣ NOVA FUNÇÃO DE ENVIAR IMAGEM 📸
+def enviar_imagem(instancia, numero, b64_img, legenda):
+    headers = {"apikey": EVO_KEY}
+    
+    # Mostra "Digitando..." antes de mandar a foto
+    url_presenca = f"{EVO_URL}/chat/sendPresence/{instancia}"
+    try: requests.post(url_presenca, json={"number": numero, "options": {"delay": 2000, "presence": "composing"}}, headers=headers, timeout=10)
+    except: pass
+    time.sleep(2)
+    
+    # Envia a foto oficial
+    url = f"{EVO_URL}/message/sendMedia/{instancia}"
+    # Limpa a legenda caso seja aquela tag provisória de quando salva sem legenda
+    if legenda.startswith("📸"): legenda = "" 
+    
+    data = {
+        "number": numero,
+        "options": {"delay": 0},
+        "mediaMessage": {
+            "mediatype": "image",
+            "caption": legenda,
+            "media": b64_img
+        }
+    }
+    print(f"📸 Disparando IMAGEM para: {numero} | Legenda: {legenda}")
+    try: 
         res = requests.post(url, json=data, headers=headers, timeout=30)
-        print(f"📠 Confirmação da API (Áudio): {res.status_code} - {res.text}")
-    except Exception as e:
-        print("💥 Motor demorou para responder o Áudio! Evitando congelamento.")
+        print(f"📠 Confirmação API Imagem: {res.status_code}")
+    except: print("💥 Motor demorou para responder a Imagem!")
 
 # --- ROTEADOR (O Cérebro do Robô) ---
 @app.route('/webhook', methods=['POST'])
 def webhook():
     if not client: return jsonify({"erro": "Sem banco"}), 500
-    
     try:
         dados = request.json
         evento = dados.get('event', '')
@@ -89,10 +101,8 @@ def webhook():
             if "@lid" in numero_exato: numero_exato = "557583479259"
                 
             texto_recebido = ""
-            if "conversation" in msg_data:
-                texto_recebido = msg_data["conversation"]
-            elif "extendedTextMessage" in msg_data:
-                texto_recebido = msg_data["extendedTextMessage"]["text"]
+            if "conversation" in msg_data: texto_recebido = msg_data["conversation"]
+            elif "extendedTextMessage" in msg_data: texto_recebido = msg_data["extendedTextMessage"]["text"]
                 
             if not texto_recebido: return jsonify({"status": "sem texto"}), 200
                 
@@ -128,7 +138,7 @@ def webhook():
                                 if texto_recebido.strip().lower() == botao.strip().lower():
                                     proximo_id = destino.strip()
                                     break
-                    elif bloco_atual["tipo"] in ["Texto", "Áudio"]:
+                    elif bloco_atual["tipo"] in ["Texto", "Áudio", "Imagem"]:
                         proximo_id = bloco_atual.get("opcoes", "").strip()
                         
                     if proximo_id:
@@ -137,11 +147,16 @@ def webhook():
                             bloco_atual = novo_bloco
                             db["sessoes"].update_one({"_id": sessao["_id"]}, {"$set": {"bloco_id": bloco_atual["id"]}})
             
+            # 🚨 DECISÃO: O QUE ENVIAR PARA O CLIENTE?
             if bloco_atual:
                 if bloco_atual["tipo"] == "Áudio":
                     b64 = bloco_atual.get("arquivo_b64", "")
                     if b64: enviar_audio(instancia, numero_exato, b64)
-                    else: enviar_mensagem(instancia, numero_exato, "🎧 [Áudio corrompido ou vazio]")
+                    else: enviar_mensagem(instancia, numero_exato, "🎧 [Áudio não encontrado]")
+                elif bloco_atual["tipo"] == "Imagem":
+                    b64 = bloco_atual.get("arquivo_b64", "")
+                    if b64: enviar_imagem(instancia, numero_exato, b64, bloco_atual.get("msg", ""))
+                    else: enviar_mensagem(instancia, numero_exato, "🖼️ [Imagem não encontrada]")
                 else:
                     enviar_mensagem(instancia, numero_exato, bloco_atual["msg"])
                 
