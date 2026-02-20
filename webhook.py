@@ -3,6 +3,7 @@ import requests
 from flask import Flask, request, jsonify
 import pymongo
 import traceback
+import time
 
 app = Flask(__name__)
 
@@ -20,9 +21,17 @@ except Exception as e:
     print(f"❌ Erro no Banco: {e}")
 
 def enviar_mensagem(instancia, numero, texto):
-    url = f"{EVO_URL}/message/sendText/{instancia}"
     headers = {"apikey": EVO_KEY}
     
+    # 1. Pede pro WhatsApp mostrar "Digitando..." por 2 segundos
+    url_presenca = f"{EVO_URL}/chat/sendPresence/{instancia}"
+    requests.post(url_presenca, json={"number": numero, "delay": 2000, "presence": "composing"}, headers=headers)
+    
+    # Faz o robô "esperar" 2 segundos de verdade
+    time.sleep(2)
+    
+    # 2. Envia a mensagem real
+    url = f"{EVO_URL}/message/sendText/{instancia}"
     data = {
         "number": numero, 
         "textMessage": {
@@ -51,12 +60,7 @@ def webhook():
                 
             numero_exato = key.get('remoteJid', '')
             
-            print(f"🕵️‍♂️ CLIENTE DETECTADO: {numero_exato}")
-            
-            # 🚨 O DESVIO HACKER ATUALIZADO (A Maldição do Nono Dígito)
             if "@lid" in numero_exato:
-                print("🎭 Máscara detectada! Forçando o número real (SEM O 9)...")
-                # 55 (Brasil) + 75 (DDD) + 83479259 (Número SEM O 9)
                 numero_exato = "557583479259"
                 
             texto_recebido = ""
@@ -69,17 +73,24 @@ def webhook():
                 return jsonify({"status": "sem texto"}), 200
                 
             db = client["zapvoice_db"]
+            numero_db = numero_exato.split('@')[0]
+            
+            # 🚨 COMANDO MÁGICO: Se você digitar "reset", ele apaga a sua memória!
+            if texto_recebido.strip().lower() == "reset":
+                db["sessoes"].delete_one({"numero": numero_db, "instancia": instancia})
+                enviar_mensagem(instancia, numero_exato, "🔄 Memória apagada! Mande um 'Oi' para começar do zero.")
+                return jsonify({"status": "resetado"}), 200
+                
             fluxo_doc = db["fluxos"].find_one({"_id": instancia})
             
             if not fluxo_doc or not fluxo_doc.get("blocos"):
                 return jsonify({"status": "fluxo vazio"}), 200
                 
             blocos = fluxo_doc["blocos"]
-            
-            # Limpamos resquícios de @ para salvar a sessão no banco
-            numero_db = numero_exato.split('@')[0]
             sessao = db["sessoes"].find_one({"numero": numero_db, "instancia": instancia})
             bloco_atual = None
+            
+            # ... (O resto do código para baixo continua exatamente igual!)
             
             if not sessao:
                 bloco_atual = blocos[0]
