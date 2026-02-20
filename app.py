@@ -7,7 +7,7 @@ import requests
 import base64
 
 # --- CONFIGURAÇÕES DA PÁGINA ---
-st.set_page_config(page_title="ZapVoice SaaS", layout="wide", page_icon="🤖")
+st.set_page_config(page_title="ZapFluxo SaaS", layout="wide", page_icon="🤖")
 
 # --- CONEXÃO BANCO (Movida para cima para o Login funcionar) ---
 @st.cache_resource
@@ -31,7 +31,7 @@ if not st.session_state["logado"]:
     col_vazia1, col_centro, col_vazia2 = st.columns([1, 2, 1])
     
     with col_centro:
-        st.title("☁️ ZapVoice Plataforma")
+        st.title("☁️ ZapFluxo")
         st.write("Acesse ou crie a conta da sua empresa.")
         
         if not client:
