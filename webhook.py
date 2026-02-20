@@ -23,11 +23,14 @@ except Exception as e:
 def enviar_mensagem(instancia, numero, texto):
     headers = {"apikey": EVO_KEY}
     
-    # 1. Pede pro WhatsApp mostrar "Digitando..." por 2 segundos
+    # 1. Tenta acionar o "Digitando..."
     url_presenca = f"{EVO_URL}/chat/sendPresence/{instancia}"
-    requests.post(url_presenca, json={"number": numero, "delay": 2000, "presence": "composing"}, headers=headers)
+    payload_presenca = {"number": numero, "delay": 2000, "presence": "composing"}
+    res_presenca = requests.post(url_presenca, json=payload_presenca, headers=headers)
     
-    # Faz o robô "esperar" 2 segundos de verdade
+    # RASTREADOR DO DIGITANDO:
+    print(f"✍️ Resposta do Digitando: {res_presenca.status_code} - {res_presenca.text}")
+    
     time.sleep(2)
     
     # 2. Envia a mensagem real
@@ -41,7 +44,7 @@ def enviar_mensagem(instancia, numero, texto):
     print(f"📤 Disparando a mensagem para: {numero} | Texto: {texto}")
     res = requests.post(url, json=data, headers=headers)
     print(f"📠 Confirmação da API: {res.status_code} - {res.text}")
-
+    
 @app.route('/webhook', methods=['POST'])
 def webhook():
     if not client: return jsonify({"erro": "Sem banco"}), 500
