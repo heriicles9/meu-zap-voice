@@ -49,16 +49,15 @@ def webhook():
             if key.get('fromMe'):
                 return jsonify({"status": "ignorado"}), 200
                 
-            # O número original que chegou (Pode ser a máscara @lid)
             numero_exato = key.get('remoteJid', '')
             
             print(f"🕵️‍♂️ CLIENTE DETECTADO: {numero_exato}")
             
-            # 🚨 A MÁGICA AQUI: O desvio para burlar a segurança do WhatsApp!
+            # 🚨 O DESVIO HACKER ATUALIZADO (A Maldição do Nono Dígito)
             if "@lid" in numero_exato:
-                print("🎭 Máscara detectada! Ignorando a máscara e forçando o número real...")
-                # 55 (Brasil) + 75 (Seu DDD) + 983479259 (Seu número)
-                numero_exato = "5575983479259@s.whatsapp.net"
+                print("🎭 Máscara detectada! Forçando o número real (SEM O 9)...")
+                # 55 (Brasil) + 75 (DDD) + 83479259 (Número SEM O 9)
+                numero_exato = "557583479259"
                 
             texto_recebido = ""
             if "conversation" in msg_data:
@@ -77,7 +76,7 @@ def webhook():
                 
             blocos = fluxo_doc["blocos"]
             
-            # Limpamos o @s.whatsapp.net para salvar a sessão apenas com os números
+            # Limpamos resquícios de @ para salvar a sessão no banco
             numero_db = numero_exato.split('@')[0]
             sessao = db["sessoes"].find_one({"numero": numero_db, "instancia": instancia})
             bloco_atual = None
@@ -109,7 +108,6 @@ def webhook():
                             db["sessoes"].update_one({"_id": sessao["_id"]}, {"$set": {"bloco_id": bloco_atual["id"]}})
             
             if bloco_atual:
-                # Mandamos a resposta direto para o seu número real burlando a máscara!
                 enviar_mensagem(instancia, numero_exato, bloco_atual["msg"])
                 
     except Exception as e:
