@@ -6,35 +6,10 @@ import graphviz
 import requests
 import base64
 
-# --- SISTEMA DE LOGIN (CADEADO) ---
-if "logado" not in st.session_state:
-    st.session_state["logado"] = False
+# --- CONFIGURAÇÕES DA PÁGINA ---
+st.set_page_config(page_title="ZapVoice SaaS", layout="wide", page_icon="🤖")
 
-if not st.session_state["logado"]:
-    st.title("🔒 Acesso Restrito")
-    st.write("Painel de Controle do Robô")
-    
-    senha = st.text_input("Digite a senha de administrador:", type="password")
-    if st.button("Entrar"):
-        if senha == "mestra123":  # 🔑 Você pode mudar a sua senha aqui!
-            st.session_state["logado"] = True
-            st.rerun()
-        else:
-            st.error("❌ Senha incorreta!")
-    st.stop()
-# --- FIM DO LOGIN ---
-
-# --- CONFIGURAÇÕES ---
-st.set_page_config(page_title="ZapVoice Builder", layout="wide", page_icon="🤖")
-
-# --- CREDENCIAIS DA EVOLUTION API ---
-EVO_URL = "https://api-zap-motor.onrender.com"
-EVO_KEY = "Mestra123"
-
-# --- URL DO SEU WEBHOOK (CÉREBRO) ---
-WEBHOOK_URL = "https://meu-zap-webhook.onrender.com/webhook"
-
-# --- CONEXÃO BANCO ---
+# --- CONEXÃO BANCO (Movida para cima para o Login funcionar) ---
 @st.cache_resource
 def init_connection():
     try:
@@ -47,27 +22,94 @@ def init_connection():
 
 client = init_connection()
 
+# --- SISTEMA DE LOGIN MULTI-USUÁRIO (SaaS) ---
+if "logado" not in st.session_state:
+    st.session_state["logado"] = False
+    st.session_state["usuario"] = ""
+
+if not st.session_state["logado"]:
+    col_vazia1, col_centro, col_vazia2 = st.columns([1, 2, 1])
+    
+    with col_centro:
+        st.title("☁️ ZapVoice Plataforma")
+        st.write("Acesse ou crie a conta da sua empresa.")
+        
+        if not client:
+            st.error("🚨 Banco de dados desconectado. Verifique a variável MONGO_URI.")
+            st.stop()
+            
+        db = client["zapvoice_db"]
+        colecao_users = db["usuarios"]
+        
+        tab_login, tab_registro = st.tabs(["🔑 Entrar", "📝 Criar Conta"])
+        
+        with tab_login:
+            with st.container(border=True):
+                user_login = st.text_input("Usuário da Empresa", key="ulogin").lower().strip()
+                pass_login = st.text_input("Senha", type="password", key="plogin")
+                if st.button("Entrar no Painel", type="primary", use_container_width=True):
+                    if user_login and pass_login:
+                        user_data = colecao_users.find_one({"_id": user_login, "senha": pass_login})
+                        if user_data:
+                            st.session_state["logado"] = True
+                            st.session_state["usuario"] = user_login
+                            st.rerun()
+                        else:
+                            st.error("❌ Usuário ou senha incorretos!")
+                            
+        with tab_registro:
+            with st.container(border=True):
+                st.write("Crie um nome curto, sem espaços (Ex: *lojadojoao*)")
+                user_reg = st.text_input("Novo Usuário", key="ureg").lower().strip()
+                pass_reg = st.text_input("Criar Senha", type="password", key="preg")
+                if st.button("Criar e Entrar", type="primary", use_container_width=True):
+                    if user_reg and pass_reg:
+                        # Verifica se o nome já existe ou tem espaço
+                        if " " in user_reg:
+                            st.error("❌ O nome de usuário não pode ter espaços!")
+                        elif colecao_users.find_one({"_id": user_reg}):
+                            st.error("❌ Esse usuário já existe! Escolha outro nome.")
+                        else:
+                            # Salva o novo cliente no banco
+                            colecao_users.insert_one({"_id": user_reg, "senha": pass_reg})
+                            st.session_state["logado"] = True
+                            st.session_state["usuario"] = user_reg
+                            st.success("✅ Conta criada com sucesso! Entrando...")
+                            time.sleep(1)
+                            st.rerun()
+                            
+    st.stop() # Bloqueia todo o resto do código para quem não está logado!
+# --- FIM DO SISTEMA DE LOGIN ---
+
+# --- CREDENCIAIS DA EVOLUTION API ---
+EVO_URL = "https://api-zap-motor.onrender.com"
+EVO_KEY = "Mestra123"
+WEBHOOK_URL = "https://meu-zap-webhook.onrender.com/webhook"
+
+# 🚨 TRAVA DE SEGURANÇA: O projeto_id agora é o nome do usuário logado!
+projeto_id = st.session_state["usuario"]
+
 # --- FUNÇÕES DB ---
-def carregar_fluxo_db(projeto_id):
+def carregar_fluxo_db(proj_id):
     if not client: return []
     db = client["zapvoice_db"]
-    doc = db["fluxos"].find_one({"_id": projeto_id})
+    doc = db["fluxos"].find_one({"_id": proj_id})
     return doc.get("blocos", []) if doc else []
 
-def salvar_fluxo_db(projeto_id, lista_blocos):
+def salvar_fluxo_db(proj_id, lista_blocos):
     if not client: return False
     db = client["zapvoice_db"]
     db["fluxos"].update_one(
-        {"_id": projeto_id}, 
+        {"_id": proj_id}, 
         {"$set": {"blocos": lista_blocos, "updated_at": time.time()}}, 
         upsert=True
     )
     return True
 
 # --- FUNÇÕES DO WHATSAPP (EVOLUTION API) ---
-def obter_qr_code(projeto_id):
+def obter_qr_code(proj_id):
     headers = {"apikey": EVO_KEY}
-    instancia = projeto_id.replace(" ", "").replace("-", "")
+    instancia = proj_id.replace(" ", "").replace("-", "")
     
     try:
         data = {"instanceName": instancia, "qrcode": True, "token": instancia}
@@ -87,37 +129,40 @@ def obter_qr_code(projeto_id):
                 return dados_conn["base64"]
                 
         return f"ERRO API: {res_create.status_code} | {res_conn.text}"
-            
     except Exception as e:
         return f"ERRO SISTEMA: {e}"
-        
     return None
 
-def ativar_webhook(projeto_id):
+def ativar_webhook(proj_id):
     headers = {"apikey": EVO_KEY}
-    instancia = projeto_id.replace(" ", "").replace("-", "")
-    
+    instancia = proj_id.replace(" ", "").replace("-", "")
     data = {
         "enabled": True,
         "url": WEBHOOK_URL,
         "webhookByEvents": False,
         "events": ["MESSAGES_UPSERT"]
     }
-    
     try:
         res = requests.post(f"{EVO_URL}/webhook/set/{instancia}", json=data, headers=headers)
-        if res.status_code in [200, 201]:
-            return True
-        return False
+        return res.status_code in [200, 201]
     except:
         return False
 
-# --- SIDEBAR ---
+# --- SIDEBAR (O NOVO MENU DO CLIENTE) ---
 with st.sidebar:
-    st.header("🔐 Acesso")
-    projeto_id = st.text_input("ID do Projeto / Cliente", value="demoteste")
-    if st.button("🔄 Sincronizar Dados"):
+    st.header("👤 Meu Perfil")
+    st.write(f"Empresa conectada: **{projeto_id}**")
+    
+    if st.button("🔄 Sincronizar Dados", use_container_width=True):
         st.session_state.fluxo = carregar_fluxo_db(projeto_id)
+        st.rerun()
+        
+    st.divider()
+    
+    # Botão de Sair
+    if st.button("🚪 Sair do Painel", use_container_width=True):
+        st.session_state["logado"] = False
+        st.session_state["usuario"] = ""
         st.rerun()
 
 # --- ESTADO E MEMÓRIA ---
@@ -125,7 +170,6 @@ if 'fluxo' not in st.session_state:
     st.session_state.fluxo = carregar_fluxo_db(projeto_id)
 if 'indice_edicao' not in st.session_state:
     st.session_state.indice_edicao = None
-# A memória de quantos botões o Menu tem atualmente
 if 'num_opcoes' not in st.session_state:
     st.session_state.num_opcoes = 2 
 
@@ -134,7 +178,7 @@ c1, c2, c3 = st.columns([2.5, 1, 1.5])
 
 with c1:
     st.title("ZapVoice Builder 🤖☁️")
-    st.caption(f"Projeto Ativo: **{projeto_id}**")
+    st.caption(f"Trabalhando no cérebro de: **{projeto_id}**")
 with c2:
     if client: st.success("🟢 DB ON")
     else: st.error("🔴 DB OFF")
@@ -145,7 +189,6 @@ with c3:
         if st.button("1. Gerar QR Code Real", use_container_width=True):
             with st.spinner("Ligando o motor..."):
                 qr_b64 = obter_qr_code(projeto_id)
-                
                 if qr_b64 and not qr_b64.startswith("ERRO"):
                     if "," in qr_b64:
                         qr_b64 = qr_b64.split(",")[1]
@@ -156,11 +199,9 @@ with c3:
                     if qr_b64: st.code(qr_b64)
                     
         st.divider()
-        
         if st.button("2. 🎧 Ativar Robô (Webhook)", use_container_width=True, type="primary"):
             with st.spinner("Conectando Cérebro ao Motor..."):
-                sucesso = ativar_webhook(projeto_id)
-                if sucesso:
+                if ativar_webhook(projeto_id):
                     st.success("Robô ativado! Ele já está ouvindo as mensagens.")
                 else:
                     st.error("Erro ao ativar. Verifique se o celular já leu o QR Code.")
@@ -195,7 +236,6 @@ with col_editor:
             content = st.text_area("Mensagem do Menu", value=val_msg)
             st.write("---")
             
-            # --- SISTEMA DINÂMICO DE BOTÕES (+ E -) ---
             col_titulo, col_add, col_rem = st.columns([2, 1, 1])
             with col_titulo:
                 st.write("🔘 **Botões de Resposta**")
@@ -208,7 +248,6 @@ with col_editor:
                     st.session_state.num_opcoes -= 1
                     st.rerun()
 
-            # Lendo o que já estava salvo para não apagar
             linhas = val_opcoes.split("\n") if val_opcoes else []
             b_vals, d_vals = [], []
             for linha in linhas:
@@ -216,21 +255,18 @@ with col_editor:
                     b_vals.append(linha.split(">")[0].strip())
                     d_vals.append(linha.split(">")[1].strip())
 
-            # Garante que tem caixinha suficiente para exibir
             while len(b_vals) < st.session_state.num_opcoes:
                 b_vals.append("")
                 d_vals.append("")
 
-            # Montando as colunas dinamicamente
             col_btn, col_dest = st.columns(2)
             lista_opcoes = []
             
             for idx in range(st.session_state.num_opcoes):
                 with col_btn:
-                    # Chaves atualizadas para nunca dar erro de duplicação!
-                    btn_val = st.text_input(f"Opção {idx+1} (Cliente digita)", value=b_vals[idx], key=f"input_btn_{idx}")
+                    btn_val = st.text_input(f"Opção {idx+1}", value=b_vals[idx], key=f"input_btn_{idx}")
                 with col_dest:
-                    dest_val = st.text_input(f"Destino {idx+1} (Vai para o ID)", value=d_vals[idx], key=f"input_dest_{idx}")
+                    dest_val = st.text_input(f"Destino {idx+1}", value=d_vals[idx], key=f"input_dest_{idx}")
                 
                 if btn_val and dest_val:
                     lista_opcoes.append(f"{btn_val.strip()} > {dest_val.strip()}")
@@ -251,7 +287,6 @@ with col_editor:
                     st.session_state.fluxo.append(novo)
                 
                 salvar_fluxo_db(projeto_id, st.session_state.fluxo)
-                # Reseta o contador para 2 opções para o próximo bloco novo
                 st.session_state.num_opcoes = 2 
                 st.rerun()
 
@@ -262,10 +297,8 @@ with col_visual:
             with st.expander(f"📍 {b['id']} ({b['tipo']})"):
                 st.write(b['msg'])
                 c_e, c_d = st.columns(2)
-                # As chaves aqui também foram blindadas contra duplicação!
                 if c_e.button("Editar", key=f"btn_edit_{i}"):
                     st.session_state.indice_edicao = i
-                    # Se for Menu, o sistema calcula quantos botões ele já tem para abrir certo
                     if b['tipo'] == 'Menu':
                         qtd = len([l for l in b.get('opcoes', '').split('\n') if '>' in l])
                         st.session_state.num_opcoes = max(1, qtd)
