@@ -6,6 +6,24 @@ import graphviz
 import requests
 import base64
 
+# --- SISTEMA DE LOGIN (CADEADO) ---
+if "logado" not in st.session_state:
+    st.session_state["logado"] = False
+
+if not st.session_state["logado"]:
+    st.title("🔒 Acesso Restrito")
+    st.write("Painel de Controle do Robô")
+    
+    senha = st.text_input("Digite a senha de administrador:", type="password")
+    if st.button("Entrar"):
+        if senha == "mestra123":  # 🔑 Você pode mudar a sua senha aqui!
+            st.session_state["logado"] = True
+            st.rerun()
+        else:
+            st.error("❌ Senha incorreta!")
+    st.stop() # Isso faz uma barreira mágica: nada do código abaixo roda sem a senha!
+# --- FIM DO LOGIN ---
+
 # --- CONFIGURAÇÕES ---
 st.set_page_config(page_title="ZapVoice Builder", layout="wide", page_icon="🤖")
 
@@ -97,7 +115,7 @@ def ativar_webhook(projeto_id):
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("🔐 Acesso")
-    projeto_id = st.text_input("ID do Projeto / Cliente", value="demo-teste")
+    projeto_id = st.text_input("ID do Projeto / Cliente", value="demoteste")
     if st.button("🔄 Sincronizar Dados"):
         st.session_state.fluxo = carregar_fluxo_db(projeto_id)
         st.rerun()
@@ -136,7 +154,6 @@ with c3:
                     
         st.divider()
         
-        # O NOVO BOTÃO MÁGICO AQUI
         if st.button("2. 🎧 Ativar Robô (Webhook)", use_container_width=True, type="primary"):
             with st.spinner("Conectando Cérebro ao Motor..."):
                 sucesso = ativar_webhook(projeto_id)
@@ -169,10 +186,44 @@ with col_editor:
         if btype == "Áudio":
             upl = st.file_uploader("Arquivo", type=['mp3','ogg'])
             content = f"[Audio] {upl.name}" if upl else val_msg
+            routing = st.text_input("Próximo ID Automático", value=val_opcoes)
+            
         elif btype == "Menu":
             content = st.text_area("Mensagem do Menu", value=val_msg)
-            routing = st.text_area("Botões (Botão > destino)", value=val_opcoes, placeholder="Vendas > bloco_vendas")
-        else:
+            st.write("---")
+            st.write("🔘 **Configurar Botões de Resposta**")
+            
+            # Mágica para preencher as caixinhas quando for "Editar" um bloco existente
+            linhas = val_opcoes.split("\n") if val_opcoes else []
+            b_vals, d_vals = ["", "", ""], ["", "", ""]
+            for idx, linha in enumerate(linhas):
+                if idx < 3 and ">" in linha:
+                    b_vals[idx] = linha.split(">")[0].strip()
+                    d_vals[idx] = linha.split(">")[1].strip()
+
+            # Desenha as colunas
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write("**O que o cliente digita:**")
+                btn1 = st.text_input("Opção 1 (Ex: 1)", value=b_vals[0], key="b1")
+                btn2 = st.text_input("Opção 2 (Ex: 2)", value=b_vals[1], key="b2")
+                btn3 = st.text_input("Opção 3 (Ex: 3)", value=b_vals[2], key="b3")
+                
+            with col2:
+                st.write("**Para qual bloco ele vai:**")
+                dest1 = st.text_input("Destino 1 (Ex: vendas)", value=d_vals[0], key="d1")
+                dest2 = st.text_input("Destino 2 (Ex: suporte)", value=d_vals[1], key="d2")
+                dest3 = st.text_input("Destino 3 (Ex: atendente)", value=d_vals[2], key="d3")
+
+            # Junta tudo para salvar no banco do jeito que o cérebro entende
+            lista_opcoes = []
+            if btn1 and dest1: lista_opcoes.append(f"{btn1.strip()} > {dest1.strip()}")
+            if btn2 and dest2: lista_opcoes.append(f"{btn2.strip()} > {dest2.strip()}")
+            if btn3 and dest3: lista_opcoes.append(f"{btn3.strip()} > {dest3.strip()}")
+            
+            routing = "\n".join(lista_opcoes)
+            
+        else: # Tipo TEXTO
             content = st.text_area("Mensagem de Texto", value=val_msg)
             routing = st.text_input("Próximo ID", value=val_opcoes)
 
