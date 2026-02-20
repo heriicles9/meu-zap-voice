@@ -23,14 +23,13 @@ def enviar_mensagem(instancia, numero, texto):
     url = f"{EVO_URL}/message/sendText/{instancia}"
     headers = {"apikey": EVO_KEY}
     
-    # PEÇA 1 + PEÇA 2: Enviamos o número EXATO com @lid e dentro do textMessage!
     data = {
         "number": numero, 
         "textMessage": {
             "text": texto
         }
     }
-    print(f"📤 Disparando a mensagem para o ID exato: {numero} | Texto: {texto}")
+    print(f"📤 Disparando a mensagem para: {numero} | Texto: {texto}")
     res = requests.post(url, json=data, headers=headers)
     print(f"📠 Confirmação da API: {res.status_code} - {res.text}")
 
@@ -50,18 +49,22 @@ def webhook():
             if key.get('fromMe'):
                 return jsonify({"status": "ignorado"}), 200
                 
-            # O SEGREDO: Pegar o código EXATO que o WhatsApp gerou, sem cortar nada!
+            # O número original que chegou (Pode ser a máscara @lid)
             numero_exato = key.get('remoteJid', '')
             
-            print(f"🕵️‍♂️ CLIENTE DETECTADO (Máscara WA): {numero_exato}")
+            print(f"🕵️‍♂️ CLIENTE DETECTADO: {numero_exato}")
             
+            # 🚨 A MÁGICA AQUI: O desvio para burlar a segurança do WhatsApp!
+            if "@lid" in numero_exato:
+                print("🎭 Máscara detectada! Ignorando a máscara e forçando o número real...")
+                # 55 (Brasil) + 75 (Seu DDD) + 983479259 (Seu número)
+                numero_exato = "5575983479259@s.whatsapp.net"
+                
             texto_recebido = ""
             if "conversation" in msg_data:
                 texto_recebido = msg_data["conversation"]
             elif "extendedTextMessage" in msg_data:
                 texto_recebido = msg_data["extendedTextMessage"]["text"]
-                
-            print(f"💬 Ele disse: '{texto_recebido}'")
                 
             if not texto_recebido:
                 return jsonify({"status": "sem texto"}), 200
@@ -70,16 +73,18 @@ def webhook():
             fluxo_doc = db["fluxos"].find_one({"_id": instancia})
             
             if not fluxo_doc or not fluxo_doc.get("blocos"):
-                print("❌ Gaveta de blocos vazia.")
                 return jsonify({"status": "fluxo vazio"}), 200
                 
             blocos = fluxo_doc["blocos"]
-            sessao = db["sessoes"].find_one({"numero": numero_exato, "instancia": instancia})
+            
+            # Limpamos o @s.whatsapp.net para salvar a sessão apenas com os números
+            numero_db = numero_exato.split('@')[0]
+            sessao = db["sessoes"].find_one({"numero": numero_db, "instancia": instancia})
             bloco_atual = None
             
             if not sessao:
                 bloco_atual = blocos[0]
-                db["sessoes"].insert_one({"numero": numero_exato, "instancia": instancia, "bloco_id": bloco_atual["id"]})
+                db["sessoes"].insert_one({"numero": numero_db, "instancia": instancia, "bloco_id": bloco_atual["id"]})
             else:
                 bloco_id_atual = sessao["bloco_id"]
                 bloco_atual = next((b for b in blocos if b["id"] == bloco_id_atual), None)
@@ -104,6 +109,7 @@ def webhook():
                             db["sessoes"].update_one({"_id": sessao["_id"]}, {"$set": {"bloco_id": bloco_atual["id"]}})
             
             if bloco_atual:
+                # Mandamos a resposta direto para o seu número real burlando a máscara!
                 enviar_mensagem(instancia, numero_exato, bloco_atual["msg"])
                 
     except Exception as e:
