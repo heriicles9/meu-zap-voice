@@ -20,35 +20,50 @@ except Exception as e:
     client = None
     print(f"❌ Erro no Banco: {e}")
 
+# 1️⃣ FUNÇÃO DE ENVIAR TEXTO
 def enviar_mensagem(instancia, numero, texto):
     headers = {"apikey": EVO_KEY}
-    
-    # 1. Tenta acionar o "Digitando..." (Agora com a gaveta "options" que a v1.8.2 exige!)
     url_presenca = f"{EVO_URL}/chat/sendPresence/{instancia}"
     payload_presenca = {
         "number": numero, 
-        "options": {
-            "delay": 2000, 
-            "presence": "composing"
-        }
+        "options": {"delay": 2000, "presence": "composing"}
     }
-    res_presenca = requests.post(url_presenca, json=payload_presenca, headers=headers)
-    print(f"✍️ Resposta do Digitando: {res_presenca.status_code} - {res_presenca.text}")
-    
+    requests.post(url_presenca, json=payload_presenca, headers=headers)
     time.sleep(2)
     
-    # 2. Envia a mensagem real
     url = f"{EVO_URL}/message/sendText/{instancia}"
-    data = {
+    data = {"number": numero, "textMessage": {"text": texto}}
+    requests.post(url, json=data, headers=headers)
+
+# 2️⃣ NOVA FUNÇÃO DE ENVIAR ÁUDIO (Gravado na hora!)
+def enviar_audio(instancia, numero, b64_audio):
+    headers = {"apikey": EVO_KEY}
+    
+    # Faz o WhatsApp mostrar "Gravando áudio..." por 3 segundos
+    url_presenca = f"{EVO_URL}/chat/sendPresence/{instancia}"
+    payload_presenca = {
         "number": numero, 
-        "textMessage": {
-            "text": texto
+        "options": {"delay": 3000, "presence": "recording"}
+    }
+    requests.post(url_presenca, json=payload_presenca, headers=headers)
+    
+    time.sleep(3)
+    
+    # Dispara o áudio com a flag "encoding: true" (vira gravação de voz)
+    url = f"{EVO_URL}/message/sendWhatsAppAudio/{instancia}"
+    data = {
+        "number": numero,
+        "options": {
+            "encoding": True  # MÁGICA: Isso converte o arquivo em áudio nativo de voz!
+        },
+        "audioMessage": {
+            "audio": b64_audio
         }
     }
-    print(f"📤 Disparando a mensagem para: {numero} | Texto: {texto}")
+    print(f"🎤 Disparando ÁUDIO para: {numero}")
     res = requests.post(url, json=data, headers=headers)
-    print(f"📠 Confirmação da API: {res.status_code} - {res.text}")
-    
+    print(f"📠 Confirmação da API (Áudio): {res.status_code} - {res.text}")
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     if not client: return jsonify({"erro": "Sem banco"}), 500
@@ -82,22 +97,18 @@ def webhook():
             db = client["zapvoice_db"]
             numero_db = numero_exato.split('@')[0]
             
-            # 🚨 COMANDO MÁGICO: Se você digitar "reset", ele apaga a sua memória!
             if texto_recebido.strip().lower() == "reset":
                 db["sessoes"].delete_one({"numero": numero_db, "instancia": instancia})
-                enviar_mensagem(instancia, numero_exato, "🔄 Memória apagada! Mande um 'Oi' para começar do zero.")
+                enviar_mensagem(instancia, numero_exato, "🔄 Memória apagada!")
                 return jsonify({"status": "resetado"}), 200
                 
             fluxo_doc = db["fluxos"].find_one({"_id": instancia})
-            
             if not fluxo_doc or not fluxo_doc.get("blocos"):
                 return jsonify({"status": "fluxo vazio"}), 200
                 
             blocos = fluxo_doc["blocos"]
             sessao = db["sessoes"].find_one({"numero": numero_db, "instancia": instancia})
             bloco_atual = None
-            
-            # ... (O resto do código para baixo continua exatamente igual!)
             
             if not sessao:
                 bloco_atual = blocos[0]
@@ -116,7 +127,8 @@ def webhook():
                                 if texto_recebido.strip().lower() == botao.strip().lower():
                                     proximo_id = destino.strip()
                                     break
-                    elif bloco_atual["tipo"] == "Texto":
+                    # Se for Texto ou Áudio, qualquer coisa que o cliente digitar avança para o próximo ID
+                    elif bloco_atual["tipo"] in ["Texto", "Áudio"]:
                         proximo_id = bloco_atual.get("opcoes", "").strip()
                         
                     if proximo_id:
@@ -125,8 +137,16 @@ def webhook():
                             bloco_atual = novo_bloco
                             db["sessoes"].update_one({"_id": sessao["_id"]}, {"$set": {"bloco_id": bloco_atual["id"]}})
             
+            # 🚨 DECISÃO: Envia Texto ou Envia Áudio
             if bloco_atual:
-                enviar_mensagem(instancia, numero_exato, bloco_atual["msg"])
+                if bloco_atual["tipo"] == "Áudio":
+                    b64 = bloco_atual.get("arquivo_b64", "")
+                    if b64:
+                        enviar_audio(instancia, numero_exato, b64)
+                    else:
+                        enviar_mensagem(instancia, numero_exato, "🎧 [Áudio corrompido ou vazio]")
+                else:
+                    enviar_mensagem(instancia, numero_exato, bloco_atual["msg"])
                 
     except Exception as e:
         print(f"💥 ERRO GRAVE NO PYTHON: {e}")
