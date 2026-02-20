@@ -21,7 +21,7 @@ if not st.session_state["logado"]:
             st.rerun()
         else:
             st.error("❌ Senha incorreta!")
-    st.stop() # Isso faz uma barreira mágica: nada do código abaixo roda sem a senha!
+    st.stop()
 # --- FIM DO LOGIN ---
 
 # --- CONFIGURAÇÕES ---
@@ -120,11 +120,14 @@ with st.sidebar:
         st.session_state.fluxo = carregar_fluxo_db(projeto_id)
         st.rerun()
 
-# --- ESTADO ---
+# --- ESTADO E MEMÓRIA ---
 if 'fluxo' not in st.session_state:
     st.session_state.fluxo = carregar_fluxo_db(projeto_id)
 if 'indice_edicao' not in st.session_state:
     st.session_state.indice_edicao = None
+# A memória de quantos botões o Menu tem atualmente
+if 'num_opcoes' not in st.session_state:
+    st.session_state.num_opcoes = 2 
 
 # --- HEADER COM O QR CODE E WEBHOOK ---
 c1, c2, c3 = st.columns([2.5, 1, 1.5])
@@ -191,41 +194,52 @@ with col_editor:
         elif btype == "Menu":
             content = st.text_area("Mensagem do Menu", value=val_msg)
             st.write("---")
-            st.write("🔘 **Configurar Botões de Resposta**")
             
-            # Mágica para preencher as caixinhas quando for "Editar" um bloco existente
+            # --- SISTEMA DINÂMICO DE BOTÕES (+ E -) ---
+            col_titulo, col_add, col_rem = st.columns([2, 1, 1])
+            with col_titulo:
+                st.write("🔘 **Botões de Resposta**")
+            with col_add:
+                if st.button("➕ Mais", use_container_width=True):
+                    st.session_state.num_opcoes += 1
+                    st.rerun()
+            with col_rem:
+                if st.button("➖ Menos", use_container_width=True) and st.session_state.num_opcoes > 1:
+                    st.session_state.num_opcoes -= 1
+                    st.rerun()
+
+            # Lendo o que já estava salvo para não apagar
             linhas = val_opcoes.split("\n") if val_opcoes else []
-            b_vals, d_vals = ["", "", ""], ["", "", ""]
-            for idx, linha in enumerate(linhas):
-                if idx < 3 and ">" in linha:
-                    b_vals[idx] = linha.split(">")[0].strip()
-                    d_vals[idx] = linha.split(">")[1].strip()
+            b_vals, d_vals = [], []
+            for linha in linhas:
+                if ">" in linha:
+                    b_vals.append(linha.split(">")[0].strip())
+                    d_vals.append(linha.split(">")[1].strip())
 
-            # Desenha as colunas
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write("**O que o cliente digita:**")
-                btn1 = st.text_input("Opção 1 (Ex: 1)", value=b_vals[0], key="b1")
-                btn2 = st.text_input("Opção 2 (Ex: 2)", value=b_vals[1], key="b2")
-                btn3 = st.text_input("Opção 3 (Ex: 3)", value=b_vals[2], key="b3")
-                
-            with col2:
-                st.write("**Para qual bloco ele vai:**")
-                dest1 = st.text_input("Destino 1 (Ex: vendas)", value=d_vals[0], key="d1")
-                dest2 = st.text_input("Destino 2 (Ex: suporte)", value=d_vals[1], key="d2")
-                dest3 = st.text_input("Destino 3 (Ex: atendente)", value=d_vals[2], key="d3")
+            # Garante que tem caixinha suficiente para exibir
+            while len(b_vals) < st.session_state.num_opcoes:
+                b_vals.append("")
+                d_vals.append("")
 
-            # Junta tudo para salvar no banco do jeito que o cérebro entende
+            # Montando as colunas dinamicamente
+            col_btn, col_dest = st.columns(2)
             lista_opcoes = []
-            if btn1 and dest1: lista_opcoes.append(f"{btn1.strip()} > {dest1.strip()}")
-            if btn2 and dest2: lista_opcoes.append(f"{btn2.strip()} > {dest2.strip()}")
-            if btn3 and dest3: lista_opcoes.append(f"{btn3.strip()} > {dest3.strip()}")
+            
+            for idx in range(st.session_state.num_opcoes):
+                with col_btn:
+                    # Chaves atualizadas para nunca dar erro de duplicação!
+                    btn_val = st.text_input(f"Opção {idx+1} (Cliente digita)", value=b_vals[idx], key=f"input_btn_{idx}")
+                with col_dest:
+                    dest_val = st.text_input(f"Destino {idx+1} (Vai para o ID)", value=d_vals[idx], key=f"input_dest_{idx}")
+                
+                if btn_val and dest_val:
+                    lista_opcoes.append(f"{btn_val.strip()} > {dest_val.strip()}")
             
             routing = "\n".join(lista_opcoes)
             
         else: # Tipo TEXTO
             content = st.text_area("Mensagem de Texto", value=val_msg)
-            routing = st.text_input("Próximo ID", value=val_opcoes)
+            routing = st.text_input("Próximo ID Automático", value=val_opcoes)
 
         if st.button("💾 Salvar Bloco", type="primary", use_container_width=True):
             if bid and content:
@@ -235,7 +249,10 @@ with col_editor:
                     st.session_state.indice_edicao = None
                 else:
                     st.session_state.fluxo.append(novo)
+                
                 salvar_fluxo_db(projeto_id, st.session_state.fluxo)
+                # Reseta o contador para 2 opções para o próximo bloco novo
+                st.session_state.num_opcoes = 2 
                 st.rerun()
 
 with col_visual:
@@ -245,10 +262,15 @@ with col_visual:
             with st.expander(f"📍 {b['id']} ({b['tipo']})"):
                 st.write(b['msg'])
                 c_e, c_d = st.columns(2)
-                if c_e.button("Editar", key=f"e{i}"):
+                # As chaves aqui também foram blindadas contra duplicação!
+                if c_e.button("Editar", key=f"btn_edit_{i}"):
                     st.session_state.indice_edicao = i
+                    # Se for Menu, o sistema calcula quantos botões ele já tem para abrir certo
+                    if b['tipo'] == 'Menu':
+                        qtd = len([l for l in b.get('opcoes', '').split('\n') if '>' in l])
+                        st.session_state.num_opcoes = max(1, qtd)
                     st.rerun()
-                if c_d.button("Excluir", key=f"d{i}"):
+                if c_d.button("Excluir", key=f"btn_del_{i}"):
                     st.session_state.fluxo.pop(i)
                     salvar_fluxo_db(projeto_id, st.session_state.fluxo)
                     st.rerun()
