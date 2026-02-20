@@ -12,9 +12,10 @@ EVO_URL = "https://api-zap-motor.onrender.com"
 EVO_KEY = "Mestra123"
 MONGO_URI = os.environ.get("MONGO_URI")
 
-# --- CONEXÃO BANCO ---
+# --- CONEXÃO BANCO (Acelerador Ativado 🚀) ---
 try:
-    client = pymongo.MongoClient(MONGO_URI)
+    # O serverSelectionTimeoutMS=5000 impede que o servidor gratuito congele!
+    client = pymongo.MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
     print("✅ Banco de Dados OK!")
 except Exception as e:
     client = None
@@ -35,30 +36,23 @@ def enviar_mensagem(instancia, numero, texto):
     data = {"number": numero, "textMessage": {"text": texto}}
     requests.post(url, json=data, headers=headers)
 
-# 2️⃣ NOVA FUNÇÃO DE ENVIAR ÁUDIO (Gravado na hora!)
+# 2️⃣ FUNÇÃO DE ENVIAR ÁUDIO (Gravado na hora!)
 def enviar_audio(instancia, numero, b64_audio):
     headers = {"apikey": EVO_KEY}
     
-    # Faz o WhatsApp mostrar "Gravando áudio..." por 3 segundos
     url_presenca = f"{EVO_URL}/chat/sendPresence/{instancia}"
     payload_presenca = {
         "number": numero, 
         "options": {"delay": 3000, "presence": "recording"}
     }
     requests.post(url_presenca, json=payload_presenca, headers=headers)
-    
     time.sleep(3)
     
-    # Dispara o áudio com a flag "encoding: true" (vira gravação de voz)
     url = f"{EVO_URL}/message/sendWhatsAppAudio/{instancia}"
     data = {
         "number": numero,
-        "options": {
-            "encoding": True  # MÁGICA: Isso converte o arquivo em áudio nativo de voz!
-        },
-        "audioMessage": {
-            "audio": b64_audio
-        }
+        "options": {"encoding": True},
+        "audioMessage": {"audio": b64_audio}
     }
     print(f"🎤 Disparando ÁUDIO para: {numero}")
     res = requests.post(url, json=data, headers=headers)
@@ -127,7 +121,6 @@ def webhook():
                                 if texto_recebido.strip().lower() == botao.strip().lower():
                                     proximo_id = destino.strip()
                                     break
-                    # Se for Texto ou Áudio, qualquer coisa que o cliente digitar avança para o próximo ID
                     elif bloco_atual["tipo"] in ["Texto", "Áudio"]:
                         proximo_id = bloco_atual.get("opcoes", "").strip()
                         
@@ -137,7 +130,6 @@ def webhook():
                             bloco_atual = novo_bloco
                             db["sessoes"].update_one({"_id": sessao["_id"]}, {"$set": {"bloco_id": bloco_atual["id"]}})
             
-            # 🚨 DECISÃO: Envia Texto ou Envia Áudio
             if bloco_atual:
                 if bloco_atual["tipo"] == "Áudio":
                     b64 = bloco_atual.get("arquivo_b64", "")
@@ -154,5 +146,7 @@ def webhook():
         
     return jsonify({"status": "ok"}), 200
 
+# 🚨 Garante que o Render encontre a porta correta instantaneamente!
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    porta = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=porta)
