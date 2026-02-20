@@ -64,13 +64,11 @@ if not st.session_state["logado"]:
                 pass_reg = st.text_input("Criar Senha", type="password", key="preg")
                 if st.button("Criar e Entrar", type="primary", use_container_width=True):
                     if user_reg and pass_reg:
-                        # Verifica se o nome já existe ou tem espaço
                         if " " in user_reg:
                             st.error("❌ O nome de usuário não pode ter espaços!")
                         elif colecao_users.find_one({"_id": user_reg}):
                             st.error("❌ Esse usuário já existe! Escolha outro nome.")
                         else:
-                            # Salva o novo cliente no banco
                             colecao_users.insert_one({"_id": user_reg, "senha": pass_reg})
                             st.session_state["logado"] = True
                             st.session_state["usuario"] = user_reg
@@ -78,7 +76,7 @@ if not st.session_state["logado"]:
                             time.sleep(1)
                             st.rerun()
                             
-    st.stop() # Bloqueia todo o resto do código para quem não está logado!
+    st.stop() # Bloqueia o código para quem não está logado!
 # --- FIM DO SISTEMA DE LOGIN ---
 
 # --- CREDENCIAIS DA EVOLUTION API ---
@@ -86,7 +84,7 @@ EVO_URL = "https://api-zap-motor.onrender.com"
 EVO_KEY = "Mestra123"
 WEBHOOK_URL = "https://meu-zap-webhook.onrender.com/webhook"
 
-# 🚨 TRAVA DE SEGURANÇA: O projeto_id agora é o nome do usuário logado!
+# 🚨 O projeto_id agora é o nome do usuário logado!
 projeto_id = st.session_state["usuario"]
 
 # --- FUNÇÕES DB ---
@@ -159,7 +157,6 @@ with st.sidebar:
         
     st.divider()
     
-    # Botão de Sair
     if st.button("🚪 Sair do Painel", use_container_width=True):
         st.session_state["logado"] = False
         st.session_state["usuario"] = ""
@@ -227,9 +224,12 @@ with col_editor:
         btype = st.selectbox("Tipo", ["Texto", "Menu", "Áudio"], index=val_tipo_index)
         
         content, routing = "", ""
+        upl = None
+        
         if btype == "Áudio":
-            upl = st.file_uploader("Arquivo", type=['mp3','ogg'])
-            content = f"[Audio] {upl.name}" if upl else val_msg
+            upl = st.file_uploader("Arquivo de Áudio", type=['mp3','ogg'])
+            # Se não subiu arquivo novo, mas já tinha um texto salvo, ele mostra "Áudio salvo"
+            content = f"🎵 [Novo Áudio: {upl.name}]" if upl else (val_msg if val_msg else "🎵 [Áudio salvo no Banco]")
             routing = st.text_input("Próximo ID Automático", value=val_opcoes)
             
         elif btype == "Menu":
@@ -280,6 +280,17 @@ with col_editor:
         if st.button("💾 Salvar Bloco", type="primary", use_container_width=True):
             if bid and content:
                 novo = {"id": bid, "tipo": btype, "msg": content, "opcoes": routing}
+                
+                # 🚨 A MÁGICA DO ÁUDIO AQUI!
+                if btype == "Áudio":
+                    if upl is not None:
+                        # Converte o arquivo de áudio em código texto (Base64) e guarda no banco!
+                        novo["arquivo_b64"] = base64.b64encode(upl.read()).decode('utf-8')
+                    elif st.session_state.indice_edicao is not None:
+                        # Se não subiu arquivo novo, copia o que já estava lá para não perder
+                        bloco_antigo = st.session_state.fluxo[st.session_state.indice_edicao]
+                        novo["arquivo_b64"] = bloco_antigo.get("arquivo_b64", "")
+                
                 if st.session_state.indice_edicao is not None:
                     st.session_state.fluxo[st.session_state.indice_edicao] = novo
                     st.session_state.indice_edicao = None
