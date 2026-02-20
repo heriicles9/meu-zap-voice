@@ -23,15 +23,16 @@ def enviar_mensagem(instancia, numero, texto):
     url = f"{EVO_URL}/message/sendText/{instancia}"
     headers = {"apikey": EVO_KEY}
     
+    # PEÇA 1 + PEÇA 2: Enviamos o número EXATO com @lid e dentro do textMessage!
     data = {
         "number": numero, 
         "textMessage": {
             "text": texto
         }
     }
-    print(f"📤 Tentando enviar para: {numero} | Texto: {texto}")
+    print(f"📤 Disparando a mensagem para o ID exato: {numero} | Texto: {texto}")
     res = requests.post(url, json=data, headers=headers)
-    print(f"📠 Resposta da API: {res.status_code} - {res.text}")
+    print(f"📠 Confirmação da API: {res.status_code} - {res.text}")
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -49,15 +50,10 @@ def webhook():
             if key.get('fromMe'):
                 return jsonify({"status": "ignorado"}), 200
                 
-            # 🚨 BUSCANDO O NÚMERO COM SEGURANÇA MÁXIMA
-            numero_bruto = dados.get('data', {}).get('sender', '')
-            if not numero_bruto:
-                numero_bruto = key.get('remoteJid', '')
-                
-            # Limpa tudo que vier depois do @ para pegar só o telefone
-            numero_real = numero_bruto.split('@')[0] if '@' in numero_bruto else numero_bruto
+            # O SEGREDO: Pegar o código EXATO que o WhatsApp gerou, sem cortar nada!
+            numero_exato = key.get('remoteJid', '')
             
-            print(f"🕵️‍♂️ NÚMERO EXTRAÍDO: {numero_real} (Original que chegou: {numero_bruto})")
+            print(f"🕵️‍♂️ CLIENTE DETECTADO (Máscara WA): {numero_exato}")
             
             texto_recebido = ""
             if "conversation" in msg_data:
@@ -65,7 +61,7 @@ def webhook():
             elif "extendedTextMessage" in msg_data:
                 texto_recebido = msg_data["extendedTextMessage"]["text"]
                 
-            print(f"💬 Mensagem recebida: '{texto_recebido}'")
+            print(f"💬 Ele disse: '{texto_recebido}'")
                 
             if not texto_recebido:
                 return jsonify({"status": "sem texto"}), 200
@@ -74,20 +70,18 @@ def webhook():
             fluxo_doc = db["fluxos"].find_one({"_id": instancia})
             
             if not fluxo_doc or not fluxo_doc.get("blocos"):
-                print("❌ Gaveta de blocos vazia ou projeto não encontrado no DB.")
+                print("❌ Gaveta de blocos vazia.")
                 return jsonify({"status": "fluxo vazio"}), 200
                 
             blocos = fluxo_doc["blocos"]
-            sessao = db["sessoes"].find_one({"numero": numero_real, "instancia": instancia})
+            sessao = db["sessoes"].find_one({"numero": numero_exato, "instancia": instancia})
             bloco_atual = None
             
             if not sessao:
-                print("🆕 Cliente novo detectado!")
                 bloco_atual = blocos[0]
-                db["sessoes"].insert_one({"numero": numero_real, "instancia": instancia, "bloco_id": bloco_atual["id"]})
+                db["sessoes"].insert_one({"numero": numero_exato, "instancia": instancia, "bloco_id": bloco_atual["id"]})
             else:
                 bloco_id_atual = sessao["bloco_id"]
-                print(f"🔄 Cliente voltando. Ele estava no bloco '{bloco_id_atual}'")
                 bloco_atual = next((b for b in blocos if b["id"] == bloco_id_atual), None)
                 
                 if bloco_atual:
@@ -110,11 +104,11 @@ def webhook():
                             db["sessoes"].update_one({"_id": sessao["_id"]}, {"$set": {"bloco_id": bloco_atual["id"]}})
             
             if bloco_atual:
-                enviar_mensagem(instancia, numero_real, bloco_atual["msg"])
+                enviar_mensagem(instancia, numero_exato, bloco_atual["msg"])
                 
     except Exception as e:
         print(f"💥 ERRO GRAVE NO PYTHON: {e}")
-        traceback.print_exc() # Isso vai mostrar a linha exata do erro!
+        traceback.print_exc()
         
     return jsonify({"status": "ok"}), 200
 
