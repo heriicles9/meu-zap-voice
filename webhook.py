@@ -12,52 +12,64 @@ EVO_URL = "https://api-zap-motor.onrender.com"
 EVO_KEY = "Mestra123"
 MONGO_URI = os.environ.get("MONGO_URI")
 
-# --- CONEXÃO BANCO (Acelerador Ativado 🚀) ---
+# --- CONEXÃO BANCO ---
 try:
-    # O serverSelectionTimeoutMS=5000 impede que o servidor gratuito congele!
     client = pymongo.MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+    client.admin.command('ping') # Força um teste rápido no banco!
     print("✅ Banco de Dados OK!")
 except Exception as e:
     client = None
     print(f"❌ Erro no Banco: {e}")
 
-# 1️⃣ FUNÇÃO DE ENVIAR TEXTO
+# 🌐 ROTA DE TESTE (Para você abrir no navegador e ver se está online!)
+@app.route('/', methods=['GET'])
+def home():
+    return "<h1>🧠 O Cérebro do ZapFluxo está Online e Operante! ⚡</h1>"
+
+# 1️⃣ FUNÇÃO DE ENVIAR TEXTO (Agora com limite de espera!)
 def enviar_mensagem(instancia, numero, texto):
     headers = {"apikey": EVO_KEY}
+    
     url_presenca = f"{EVO_URL}/chat/sendPresence/{instancia}"
-    payload_presenca = {
-        "number": numero, 
-        "options": {"delay": 2000, "presence": "composing"}
-    }
-    requests.post(url_presenca, json=payload_presenca, headers=headers)
+    payload_presenca = {"number": numero, "options": {"delay": 2000, "presence": "composing"}}
+    try:
+        # Tenta acionar o digitando. Se o motor demorar mais de 10 segs, ignora para não travar!
+        requests.post(url_presenca, json=payload_presenca, headers=headers, timeout=10)
+    except: pass 
+    
     time.sleep(2)
     
     url = f"{EVO_URL}/message/sendText/{instancia}"
     data = {"number": numero, "textMessage": {"text": texto}}
-    requests.post(url, json=data, headers=headers)
+    print(f"📤 Disparando a mensagem: {texto}")
+    try:
+        res = requests.post(url, json=data, headers=headers, timeout=30)
+        print(f"📠 Confirmação da API: {res.status_code} - {res.text}")
+    except Exception as e:
+        print("💥 Motor demorou para responder! Evitando congelamento do cérebro.")
 
-# 2️⃣ FUNÇÃO DE ENVIAR ÁUDIO (Gravado na hora!)
+# 2️⃣ FUNÇÃO DE ENVIAR ÁUDIO 
 def enviar_audio(instancia, numero, b64_audio):
     headers = {"apikey": EVO_KEY}
     
     url_presenca = f"{EVO_URL}/chat/sendPresence/{instancia}"
-    payload_presenca = {
-        "number": numero, 
-        "options": {"delay": 3000, "presence": "recording"}
-    }
-    requests.post(url_presenca, json=payload_presenca, headers=headers)
+    payload_presenca = {"number": numero, "options": {"delay": 3000, "presence": "recording"}}
+    try:
+        requests.post(url_presenca, json=payload_presenca, headers=headers, timeout=10)
+    except: pass
+    
     time.sleep(3)
     
     url = f"{EVO_URL}/message/sendWhatsAppAudio/{instancia}"
-    data = {
-        "number": numero,
-        "options": {"encoding": True},
-        "audioMessage": {"audio": b64_audio}
-    }
+    data = {"number": numero, "options": {"encoding": True}, "audioMessage": {"audio": b64_audio}}
     print(f"🎤 Disparando ÁUDIO para: {numero}")
-    res = requests.post(url, json=data, headers=headers)
-    print(f"📠 Confirmação da API (Áudio): {res.status_code} - {res.text}")
+    try:
+        res = requests.post(url, json=data, headers=headers, timeout=30)
+        print(f"📠 Confirmação da API (Áudio): {res.status_code} - {res.text}")
+    except Exception as e:
+        print("💥 Motor demorou para responder o Áudio! Evitando congelamento.")
 
+# --- ROTEADOR (O Cérebro do Robô) ---
 @app.route('/webhook', methods=['POST'])
 def webhook():
     if not client: return jsonify({"erro": "Sem banco"}), 500
@@ -71,13 +83,10 @@ def webhook():
             msg_data = dados.get('data', {}).get('message', {})
             key = dados.get('data', {}).get('key', {})
             
-            if key.get('fromMe'):
-                return jsonify({"status": "ignorado"}), 200
+            if key.get('fromMe'): return jsonify({"status": "ignorado"}), 200
                 
             numero_exato = key.get('remoteJid', '')
-            
-            if "@lid" in numero_exato:
-                numero_exato = "557583479259"
+            if "@lid" in numero_exato: numero_exato = "557583479259"
                 
             texto_recebido = ""
             if "conversation" in msg_data:
@@ -85,20 +94,18 @@ def webhook():
             elif "extendedTextMessage" in msg_data:
                 texto_recebido = msg_data["extendedTextMessage"]["text"]
                 
-            if not texto_recebido:
-                return jsonify({"status": "sem texto"}), 200
+            if not texto_recebido: return jsonify({"status": "sem texto"}), 200
                 
             db = client["zapvoice_db"]
             numero_db = numero_exato.split('@')[0]
             
             if texto_recebido.strip().lower() == "reset":
                 db["sessoes"].delete_one({"numero": numero_db, "instancia": instancia})
-                enviar_mensagem(instancia, numero_exato, "🔄 Memória apagada!")
+                enviar_mensagem(instancia, numero_exato, "🔄 Memória apagada! Mande um 'Oi'.")
                 return jsonify({"status": "resetado"}), 200
                 
             fluxo_doc = db["fluxos"].find_one({"_id": instancia})
-            if not fluxo_doc or not fluxo_doc.get("blocos"):
-                return jsonify({"status": "fluxo vazio"}), 200
+            if not fluxo_doc or not fluxo_doc.get("blocos"): return jsonify({"status": "fluxo vazio"}), 200
                 
             blocos = fluxo_doc["blocos"]
             sessao = db["sessoes"].find_one({"numero": numero_db, "instancia": instancia})
@@ -133,10 +140,8 @@ def webhook():
             if bloco_atual:
                 if bloco_atual["tipo"] == "Áudio":
                     b64 = bloco_atual.get("arquivo_b64", "")
-                    if b64:
-                        enviar_audio(instancia, numero_exato, b64)
-                    else:
-                        enviar_mensagem(instancia, numero_exato, "🎧 [Áudio corrompido ou vazio]")
+                    if b64: enviar_audio(instancia, numero_exato, b64)
+                    else: enviar_mensagem(instancia, numero_exato, "🎧 [Áudio corrompido ou vazio]")
                 else:
                     enviar_mensagem(instancia, numero_exato, bloco_atual["msg"])
                 
@@ -146,7 +151,6 @@ def webhook():
         
     return jsonify({"status": "ok"}), 200
 
-# 🚨 Garante que o Render encontre a porta correta instantaneamente!
 if __name__ == '__main__':
     porta = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=porta)
