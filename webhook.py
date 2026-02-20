@@ -23,12 +23,16 @@ except Exception as e:
 def enviar_mensagem(instancia, numero, texto):
     headers = {"apikey": EVO_KEY}
     
-    # 1. Tenta acionar o "Digitando..."
+    # 1. Tenta acionar o "Digitando..." (Agora com a gaveta "options" que a v1.8.2 exige!)
     url_presenca = f"{EVO_URL}/chat/sendPresence/{instancia}"
-    payload_presenca = {"number": numero, "delay": 2000, "presence": "composing"}
+    payload_presenca = {
+        "number": numero, 
+        "options": {
+            "delay": 2000, 
+            "presence": "composing"
+        }
+    }
     res_presenca = requests.post(url_presenca, json=payload_presenca, headers=headers)
-    
-    # RASTREADOR DO DIGITANDO:
     print(f"✍️ Resposta do Digitando: {res_presenca.status_code} - {res_presenca.text}")
     
     time.sleep(2)
