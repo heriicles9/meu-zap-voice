@@ -29,23 +29,24 @@ if "logado" not in st.session_state:
     st.session_state["usuario"] = ""
 
 if not st.session_state["logado"]:
-    col_vazia1, col_centro, col_vazia2 = st.columns([1, 2, 1])
+    # 🚨 AJUSTE FINO AQUI: Mudamos de [1,2,1] para [2,1,2] para estreitar o centro
+    col_vazia1, col_centro, col_vazia2 = st.columns([2, 1, 2])
     with col_centro:
         
-        # 🚨 LOGO CENTRALIZADA SEM TEXTO E SEM BOTÃO DE AMPLIAR
+        # LOGO CENTRALIZADA
         try:
             with open("logo.png", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
             st.markdown(
                 f"""
-                <div style="display: flex; justify-content: center; margin-bottom: 30px;">
-                    <img src="data:image/png;base64,{encoded_string}" width="280" style="border-radius: 15px;">
+                <div style="display: flex; justify-content: center; margin-bottom: 20px;">
+                    <img src="data:image/png;base64,{encoded_string}" width="250" style="border-radius: 15px;">
                 </div>
                 """,
                 unsafe_allow_html=True
             )
         except:
-            pass # Se a logo não carregar, ele segue o jogo sem quebrar
+            pass 
         
         if not client:
             st.error("🚨 Banco de dados desconectado.")
@@ -53,54 +54,54 @@ if not st.session_state["logado"]:
         
         db = client["zapvoice_db"]
         
-        # 🚨 2. CRIAMOS A ABA DE TROCAR SENHA!
-        tab_login, tab_registro, tab_senha = st.tabs(["🔑 Entrar", "📝 Criar Conta", "🔄 Trocar Senha"])
+        # ABAS DE LOGIN MAIS COMPACTAS
+        tab_login, tab_registro, tab_senha = st.tabs(["🔑 Entrar", "📝 Criar", "🔄 Senha"])
         
         with tab_login:
+            st.write("") # Espacinho extra
             user_login = st.text_input("Usuário", key="ulogin").lower().strip()
             pass_login = st.text_input("Senha", type="password", key="plogin")
             
-            # 🚨 3. CAIXINHA DE MANTER LOGADO
-            manter_logado = st.checkbox("Manter-me logado", value=True)
+            manter_logado = st.checkbox("Manter conectado", value=True)
             
-            if st.button("Entrar no Painel", type="primary", use_container_width=True):
+            if st.button("Acessar Painel", type="primary", use_container_width=True):
                 if db["usuarios"].find_one({"_id": user_login, "senha": pass_login}):
                     st.session_state["logado"] = True
                     st.session_state["usuario"] = user_login
                     st.rerun()
                 else:
-                    st.error("❌ Credenciais inválidas. Tente novamente.")
+                    st.error("❌ Dados incorretos.")
                             
         with tab_registro:
+            st.write("")
             user_reg = st.text_input("Novo Usuário", key="ureg").lower().strip()
             pass_reg = st.text_input("Nova Senha", type="password", key="preg")
-            if st.button("Criar Minha Conta", type="primary", use_container_width=True):
+            if st.button("Criar Conta", type="primary", use_container_width=True):
                 if user_reg and pass_reg and not db["usuarios"].find_one({"_id": user_reg}):
                     db["usuarios"].insert_one({"_id": user_reg, "senha": pass_reg})
                     st.session_state["logado"] = True
                     st.session_state["usuario"] = user_reg
-                    st.success("✅ Conta criada com sucesso!")
-                    time.sleep(1)
+                    st.success("✅ Sucesso!")
+                    time.sleep(0.5)
                     st.rerun()
                 else:
-                    st.error("❌ Erro: Preencha tudo ou o usuário já existe.")
+                    st.error("❌ Erro no cadastro.")
                     
-        # 🚨 4. LÓGICA DE TROCAR SENHA
         with tab_senha:
+            st.write("")
             user_troca = st.text_input("Seu Usuário", key="utroca").lower().strip()
             pass_atual = st.text_input("Senha Atual", type="password", key="patual")
             pass_nova = st.text_input("Nova Senha", type="password", key="pnova")
             
-            if st.button("Atualizar Senha", type="primary", use_container_width=True):
+            if st.button("Mudar Senha", type="primary", use_container_width=True):
                 if user_troca and pass_atual and pass_nova:
-                    # Verifica se a senha atual está correta no banco
                     if db["usuarios"].find_one({"_id": user_troca, "senha": pass_atual}):
                         db["usuarios"].update_one({"_id": user_troca}, {"$set": {"senha": pass_nova}})
-                        st.success("✅ Senha atualizada com sucesso! Volte para a aba 'Entrar'.")
+                        st.success("✅ Senha alterada!")
                     else:
-                        st.error("❌ Usuário ou senha atual incorretos!")
+                        st.error("❌ Dados atuais incorretos.")
                 else:
-                    st.warning("⚠️ Preencha todos os campos para trocar a senha.")
+                    st.warning("⚠️ Preencha tudo.")
                     
     st.stop()
 
@@ -134,7 +135,6 @@ if 'indice_edicao' not in st.session_state: st.session_state.indice_edicao = Non
 if 'num_opcoes' not in st.session_state: st.session_state.num_opcoes = 2
 
 with st.sidebar:
-    # 🚨 LOGO NA BARRA LATERAL (Conforme combinamos)
     try:
         st.image("logo.png", use_container_width=True)
     except:
