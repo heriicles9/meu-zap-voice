@@ -137,8 +137,11 @@ with c3:
         if st.button("1. Gerar QR Code Real", use_container_width=True):
             qr = obter_qr_code(projeto_id)
             if qr and not qr.startswith("ERRO"): st.image(base64.b64decode(qr.split(",")[1] if "," in qr else qr), caption="Escaneie!")
-        if st.button("2. 🎧 Ativar Robô", use_container_width=True, type="primary"):
-            st.success("Robô ativado!") if ativar_webhook(projeto_id) else st.error("Erro")
+       if st.button("2. 🎧 Ativar Robô", use_container_width=True, type="primary"):
+            if ativar_webhook(projeto_id):
+                st.success("Robô ativado!")
+            else:
+                st.error("Erro ao ativar robô.")
 st.divider()
 
 col_editor, col_visual = st.columns([1, 1.5])
