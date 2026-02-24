@@ -17,11 +17,12 @@ except:
 
 @app.route('/')
 def home():
-    return "ZapFluxo v3.1 (Escudo Anti-429 Máximo) Online 🚀🛡️"
+    return "ZapFluxo v3.2 (Escudo Máximo + Gemini 2.5) Online 🚀🎧"
 
-# --- FUNÇÃO 1: IA PARA CONVERSAR (Com Loop de Insistência) ---
+# --- FUNÇÃO 1: IA PARA CONVERSAR ---
 def consultar_gemini(treinamento, historico_lista, condicao_saida=""):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+    # 🚨 ATUALIZADO PARA O GEMINI 2.5 FLASH!
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_KEY}"
     texto_historico = "\n".join(historico_lista)
     regra_fuga = ""
     if condicao_saida:
@@ -30,7 +31,6 @@ def consultar_gemini(treinamento, historico_lista, condicao_saida=""):
     prompt = f"Você é um assistente de WhatsApp. Siga estas regras:\n{treinamento}{regra_fuga}\n\nHistórico:\n{texto_historico}\n\nSua resposta:"
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
-    # 🚨 TENTA 3 VEZES ANTES DE DESISTIR!
     for tentativa in range(3):
         try:
             res = requests.post(url, json=payload, headers={'Content-Type': 'application/json'}, timeout=20)
@@ -38,7 +38,6 @@ def consultar_gemini(treinamento, historico_lista, condicao_saida=""):
                 texto = res.json()['candidates'][0]['content']['parts'][0]['text']
                 return texto.replace("João:", "").replace("Assistente:", "").strip()
             elif res.status_code == 429:
-                # Se o Google barrar, espera 4 segundos e tenta de novo silenciosamente
                 time.sleep(4)
             else:
                 return f"🤖 [Erro do Google! Código: {res.status_code}]"
@@ -60,9 +59,10 @@ def obter_base64_da_mensagem(instancia, mensagem_obj):
         pass
     return None
 
-# --- FUNÇÃO 3: IA PARA TRANSCREVER ÁUDIO (Com Loop de Insistência) ---
+# --- FUNÇÃO 3: IA PARA TRANSCREVER ÁUDIO ---
 def transcrever_audio(audio_b64):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+    # 🚨 ATUALIZADO PARA O GEMINI 2.5 FLASH!
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_KEY}"
     payload = {
         "contents": [{
             "parts": [
@@ -72,7 +72,6 @@ def transcrever_audio(audio_b64):
         }]
     }
     
-    # 🚨 TENTA 3 VEZES ANTES DE DESISTIR!
     for tentativa in range(3):
         try:
             res = requests.post(url, json=payload, headers={'Content-Type': 'application/json'}, timeout=20)
@@ -209,5 +208,6 @@ def webhook():
     return jsonify({"status": "success"}), 200
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
+    # 🚨 Puxa exatamente a porta que o Render exige!
+    port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
