@@ -29,11 +29,9 @@ if "logado" not in st.session_state:
     st.session_state["usuario"] = ""
 
 if not st.session_state["logado"]:
-    # 🚨 Voltamos para o modo "Normal/Largo" [1, 2, 1]
     col_vazia1, col_centro, col_vazia2 = st.columns([1, 2, 1])
     with col_centro:
         
-        # 🚨 LOGO CENTRALIZADA E BEM MAIOR (width="380")
         try:
             with open("logo.png", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
@@ -157,7 +155,10 @@ with c2:
         st.error("🔴 DB Offline")
 with c3:
     with st.popover("📲 Conectar Zap", use_container_width=True):
-        if st.button("1. Gerar QR Code", use_container_width=True):
+        
+        # --- OPÇÃO 1: QR CODE ---
+        st.markdown("**Opção 1: QR Code (PC)**")
+        if st.button("Gerar QR Code", use_container_width=True):
             headers = {"apikey": EVO_KEY}
             res_conn = requests.get(f"{EVO_URL}/instance/connect/{instancia_limpa}", headers=headers)
             
@@ -169,12 +170,44 @@ with c3:
                     st.image(base64.b64decode(res_create.json()["qrcode"]["base64"].split(",")[1]))
                 else:
                     st.error("Erro na API. Atualize a página.")
-                    
-        if st.button("2. Ativar Robô", type="primary", use_container_width=True):
-            if ativar_webhook():
-                st.success("Robô Ativo!")
+        
+        st.divider()
+        
+        # --- OPÇÃO 2: EMPARELHAMENTO ---
+        st.markdown("**Opção 2: Código (Celular)**")
+        numero_zap = st.text_input("Celular", placeholder="Ex: 5511999999999", key="nzap", label_visibility="collapsed")
+        
+        if st.button("Gerar Código", use_container_width=True):
+            if numero_zap:
+                headers = {"apikey": EVO_KEY}
+                res_conn = requests.get(f"{EVO_URL}/instance/connect/{instancia_limpa}?number={numero_zap}", headers=headers)
+                
+                try:
+                    codigo = res_conn.json().get("pairingCode")
+                    if res_conn.status_code == 200 and codigo:
+                        st.success(f"Código: **{codigo}**")
+                    else:
+                        # Se não existir, cria a instância primeiro
+                        requests.post(f"{EVO_URL}/instance/create", json={"instanceName": instancia_limpa, "qrcode": False}, headers=headers)
+                        time.sleep(1)
+                        res_conn2 = requests.get(f"{EVO_URL}/instance/connect/{instancia_limpa}?number={numero_zap}", headers=headers)
+                        codigo2 = res_conn2.json().get("pairingCode")
+                        if codigo2:
+                            st.success(f"Código: **{codigo2}**")
+                        else:
+                            st.error("Erro ao gerar. Use o QR Code.")
+                except:
+                    st.error("Erro de conexão. Tente novamente.")
             else:
-                st.error("Erro ao ativar")
+                st.warning("Digite o número com o 55 e DDD.")
+
+        st.divider()
+        
+        if st.button("🚀 Ativar Robô", type="primary", use_container_width=True):
+            if ativar_webhook():
+                st.success("Robô Ativo e Ouvindo!")
+            else:
+                st.error("Erro ao ativar webhook")
 st.divider()
 
 col_ed, col_vis = st.columns([1, 1.5])
