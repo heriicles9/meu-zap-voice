@@ -31,36 +31,70 @@ if "logado" not in st.session_state:
 if not st.session_state["logado"]:
     col_vazia1, col_centro, col_vazia2 = st.columns([1, 2, 1])
     with col_centro:
-        st.title("☁️ Plataforma ZapFluxo")
+        
+        # 🚨 1. LOGO NA TELA DE LOGIN AQUI!
+        try:
+            st.image("logo.png", width=250)
+        except:
+            pass # Se a logo não carregar, ele não quebra o site
+            
+        st.title("Plataforma ZapFluxo")
+        
         if not client:
             st.error("🚨 Banco de dados desconectado.")
             st.stop()
         
         db = client["zapvoice_db"]
-        tab_login, tab_registro = st.tabs(["🔑 Entrar", "📝 Criar Conta"])
+        
+        # 🚨 2. CRIAMOS A ABA DE TROCAR SENHA!
+        tab_login, tab_registro, tab_senha = st.tabs(["🔑 Entrar", "📝 Criar Conta", "🔄 Trocar Senha"])
         
         with tab_login:
             user_login = st.text_input("Usuário", key="ulogin").lower().strip()
             pass_login = st.text_input("Senha", type="password", key="plogin")
-            if st.button("Entrar", type="primary", use_container_width=True):
+            
+            # 🚨 3. CAIXINHA DE MANTER LOGADO
+            manter_logado = st.checkbox("Manter-me logado", value=True)
+            
+            if st.button("Entrar no Painel", type="primary", use_container_width=True):
                 if db["usuarios"].find_one({"_id": user_login, "senha": pass_login}):
                     st.session_state["logado"] = True
                     st.session_state["usuario"] = user_login
                     st.rerun()
                 else:
-                    st.error("❌ Credenciais inválidas")
+                    st.error("❌ Credenciais inválidas. Tente novamente.")
                             
         with tab_registro:
             user_reg = st.text_input("Novo Usuário", key="ureg").lower().strip()
             pass_reg = st.text_input("Nova Senha", type="password", key="preg")
-            if st.button("Criar Conta", type="primary", use_container_width=True):
+            if st.button("Criar Minha Conta", type="primary", use_container_width=True):
                 if user_reg and pass_reg and not db["usuarios"].find_one({"_id": user_reg}):
                     db["usuarios"].insert_one({"_id": user_reg, "senha": pass_reg})
                     st.session_state["logado"] = True
                     st.session_state["usuario"] = user_reg
+                    st.success("✅ Conta criada com sucesso!")
+                    time.sleep(1)
                     st.rerun()
                 else:
-                    st.error("❌ Erro ou usuário já existe")
+                    st.error("❌ Erro: Preencha tudo ou o usuário já existe.")
+                    
+        # 🚨 4. LÓGICA DE TROCAR SENHA
+        with tab_senha:
+            user_troca = st.text_input("Seu Usuário", key="utroca").lower().strip()
+            pass_atual = st.text_input("Senha Atual", type="password", key="patual")
+            pass_nova = st.text_input("Nova Senha", type="password", key="pnova")
+            
+            if st.button("Atualizar Senha", type="primary", use_container_width=True):
+                if user_troca and pass_atual and pass_nova:
+                    # Verifica se a senha atual está correta no banco
+                    if db["usuarios"].find_one({"_id": user_troca, "senha": pass_atual}):
+                        db["usuarios"].update_one({"_id": user_troca}, {"$set": {"senha": pass_nova}})
+                        st.success("✅ Senha atualizada com sucesso! Volte para a aba 'Entrar'.")
+                    else:
+                        st.error("❌ Usuário ou senha atual incorretos!")
+                else:
+                    st.warning("⚠️ Preencha todos os campos para trocar a senha.")
+                    
     st.stop()
 
 # --- VARIÁVEIS DE PROJETO ---
@@ -93,10 +127,14 @@ if 'indice_edicao' not in st.session_state: st.session_state.indice_edicao = Non
 if 'num_opcoes' not in st.session_state: st.session_state.num_opcoes = 2
 
 with st.sidebar:
-    st.image("logo.png", use_container_width=True)
-    
+    # 🚨 LOGO NA BARRA LATERAL (Conforme combinamos)
+    try:
+        st.image("logo.png", use_container_width=True)
+    except:
+        pass
+        
     st.header(f"👤 {projeto_id}")
-    if st.button("🔄 Sincronizar", use_container_width=True):
+    if st.button("🔄 Sincronizar Dados", use_container_width=True):
         st.session_state.fluxo = carregar_fluxo()
         st.rerun()
     if st.button("🚪 Sair", use_container_width=True):
@@ -115,13 +153,11 @@ with c3:
     with st.popover("📲 Conectar Zap", use_container_width=True):
         if st.button("1. Gerar QR Code", use_container_width=True):
             headers = {"apikey": EVO_KEY}
-            # 1º Tenta forçar o QR Code da conexão fantasma
             res_conn = requests.get(f"{EVO_URL}/instance/connect/{instancia_limpa}", headers=headers)
             
             if res_conn.status_code == 200 and "base64" in res_conn.json():
                 st.image(base64.b64decode(res_conn.json()["base64"].split(",")[1]))
             else:
-                # 2º Se não tiver vaga fantasma, cria uma nova do zero
                 res_create = requests.post(f"{EVO_URL}/instance/create", json={"instanceName": instancia_limpa, "qrcode": True}, headers=headers)
                 if "qrcode" in res_create.json():
                     st.image(base64.b64decode(res_create.json()["qrcode"]["base64"].split(",")[1]))
@@ -206,7 +242,6 @@ with col_ed:
             st.session_state.indice_edicao = None
             st.rerun()
 
-# 🚨 A MÁGICA DO MINI CRM ACONTECE AQUI NA ABA 3
 with col_vis:
     tab_lista, tab_mapa, tab_chat = st.tabs(["📋 Lista", "🕸️ Mapa", "👁️ Live Chat"])
     with tab_lista:
@@ -240,7 +275,6 @@ with col_vis:
             st.info("Nenhuma conversa ativa no momento.")
             
         for s in sessoes:
-            # Puxa o nome personalizado ou usa o número como padrão
             nome_exibicao = s.get('nome_personalizado', s.get('numero'))
             id_sessao = str(s["_id"])
             
