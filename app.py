@@ -14,304 +14,158 @@ st.set_page_config(page_title="ZapFluxo SaaS", layout="wide", page_icon="⚡")
 def init_connection():
     try:
         uri = os.environ.get("MONGO_URI") 
-        if not uri and "MONGO_URI" in st.secrets: 
-            uri = st.secrets["MONGO_URI"]
-        if not uri: 
-            return None
-        return pymongo.MongoClient(uri)
-    except: 
-        return None
+        if not uri and "MONGO_URI" in st.secrets: uri = st.secrets["MONGO_URI"]
+        return pymongo.MongoClient(uri) if uri else None
+    except: return None
 
 client = init_connection()
 
 # --- SISTEMA DE LOGIN ---
 if "logado" not in st.session_state:
-    st.session_state["logado"] = False
-    st.session_state["usuario"] = ""
+    st.session_state["logado"], st.session_state["usuario"] = False, ""
 
 if not st.session_state["logado"]:
     col_vazia1, col_centro, col_vazia2 = st.columns([1, 2, 1])
     with col_centro:
         st.title("☁️ Plataforma ZapFluxo")
-        st.write("Acesse ou crie a conta da sua empresa.")
+        if not client: st.error("🚨 Banco de dados desconectado."); st.stop()
         
-        if not client:
-            st.error("🚨 Banco de dados desconectado.")
-            st.stop()
-            
         db = client["zapvoice_db"]
-        colecao_users = db["usuarios"]
-        
         tab_login, tab_registro = st.tabs(["🔑 Entrar", "📝 Criar Conta"])
+        
         with tab_login:
-            with st.container(border=True):
-                user_login = st.text_input("Usuário da Empresa", key="ulogin").lower().strip()
-                pass_login = st.text_input("Senha", type="password", key="plogin")
-                if st.button("Entrar no Painel", type="primary", use_container_width=True):
-                    if user_login and pass_login:
-                        if colecao_users.find_one({"_id": user_login, "senha": pass_login}):
-                            st.session_state["logado"] = True
-                            st.session_state["usuario"] = user_login
-                            st.rerun()
-                        else: 
-                            st.error("❌ Usuário ou senha incorretos!")
+            user_login = st.text_input("Usuário", key="ulogin").lower().strip()
+            pass_login = st.text_input("Senha", type="password", key="plogin")
+            if st.button("Entrar", type="primary", use_container_width=True):
+                if db["usuarios"].find_one({"_id": user_login, "senha": pass_login}):
+                    st.session_state["logado"], st.session_state["usuario"] = True, user_login
+                    st.rerun()
+                else: st.error("❌ Credenciais inválidas")
                             
         with tab_registro:
-            with st.container(border=True):
-                user_reg = st.text_input("Novo Usuário", key="ureg").lower().strip()
-                pass_reg = st.text_input("Criar Senha", type="password", key="preg")
-                if st.button("Criar e Entrar", type="primary", use_container_width=True):
-                    if user_reg and pass_reg:
-                        if " " in user_reg: 
-                            st.error("❌ O nome não pode ter espaços!")
-                        elif colecao_users.find_one({"_id": user_reg}): 
-                            st.error("❌ Esse usuário já existe!")
-                        else:
-                            colecao_users.insert_one({"_id": user_reg, "senha": pass_reg})
-                            st.session_state["logado"] = True
-                            st.session_state["usuario"] = user_reg
-                            st.rerun()
+            user_reg = st.text_input("Novo Usuário", key="ureg").lower().strip()
+            pass_reg = st.text_input("Nova Senha", type="password", key="preg")
+            if st.button("Criar Conta", type="primary", use_container_width=True):
+                if user_reg and pass_reg and not db["usuarios"].find_one({"_id": user_reg}):
+                    db["usuarios"].insert_one({"_id": user_reg, "senha": pass_reg})
+                    st.session_state["logado"], st.session_state["usuario"] = True, user_reg
+                    st.rerun()
+                else: st.error("❌ Erro ou usuário já existe")
     st.stop()
 
-# --- CREDENCIAIS ---
+# --- VARIÁVEIS DE PROJETO ---
 EVO_URL = "https://api-zap-motor.onrender.com"
 EVO_KEY = "Mestra123"
 WEBHOOK_URL = "https://meu-zap-webhook.onrender.com/webhook"
 projeto_id = st.session_state["usuario"]
+instancia_limpa = projeto_id.replace(" ", "").replace("-", "")
 
-# --- FUNÇÕES DB ---
-def carregar_fluxo_db(proj_id):
-    if not client: 
-        return []
-    doc = client["zapvoice_db"]["fluxos"].find_one({"_id": proj_id})
+# --- FUNÇÕES ---
+def carregar_fluxo():
+    doc = client["zapvoice_db"]["fluxos"].find_one({"_id": projeto_id})
     return doc.get("blocos", []) if doc else []
 
-def salvar_fluxo_db(proj_id, lista_blocos):
-    if not client: 
-        return False
-    client["zapvoice_db"]["fluxos"].update_one(
-        {"_id": proj_id}, 
-        {"$set": {"blocos": lista_blocos, "updated_at": time.time()}}, 
-        upsert=True
-    )
-    return True
+def salvar_fluxo(lista):
+    client["zapvoice_db"]["fluxos"].update_one({"_id": projeto_id}, {"$set": {"blocos": lista}}, upsert=True)
 
-# --- FUNÇÕES API ---
-def obter_qr_code(proj_id):
-    headers = {"apikey": EVO_KEY}
-    instancia = proj_id.replace(" ", "").replace("-", "")
-    try:
-        res_create = requests.post(f"{EVO_URL}/instance/create", json={"instanceName": instancia, "qrcode": True, "token": instancia}, headers=headers)
-        if res_create.status_code in [200, 201]:
-            dados = res_create.json()
-            if "qrcode" in dados and "base64" in dados["qrcode"]: 
-                return dados["qrcode"]["base64"]
-        time.sleep(1)
-        res_conn = requests.get(f"{EVO_URL}/instance/connect/{instancia}", headers=headers)
-        if res_conn.status_code == 200 and "base64" in res_conn.json(): 
-            return res_conn.json()["base64"]
-        return f"ERRO API"
-    except: 
-        return None
+def ativar_webhook():
+    try: return requests.post(f"{EVO_URL}/webhook/set/{instancia_limpa}", json={"enabled": True, "url": WEBHOOK_URL, "webhookByEvents": False, "events": ["MESSAGES_UPSERT"]}, headers={"apikey": EVO_KEY}).status_code in [200, 201]
+    except: return False
 
-def ativar_webhook(proj_id):
-    headers = {"apikey": EVO_KEY}
-    instancia = proj_id.replace(" ", "").replace("-", "")
-    try: 
-        res = requests.post(f"{EVO_URL}/webhook/set/{instancia}", json={"enabled": True, "url": WEBHOOK_URL, "webhookByEvents": False, "events": ["MESSAGES_UPSERT"]}, headers=headers)
-        return res.status_code in [200, 201]
-    except: 
-        return False
+# --- INTERFACE ---
+if 'fluxo' not in st.session_state: st.session_state.fluxo = carregar_fluxo()
+if 'indice_edicao' not in st.session_state: st.session_state.indice_edicao = None
+if 'num_opcoes' not in st.session_state: st.session_state.num_opcoes = 2
 
-# --- SIDEBAR ---
 with st.sidebar:
-    st.header("👤 Meu Perfil")
-    st.write(f"Empresa conectada: **{projeto_id}**")
-    if st.button("🔄 Sincronizar Dados", use_container_width=True):
-        st.session_state.fluxo = carregar_fluxo_db(projeto_id)
-        st.rerun()
-    st.divider()
-    if st.button("🚪 Sair do Painel", use_container_width=True):
-        st.session_state["logado"] = False
-        st.session_state["usuario"] = ""
-        st.rerun()
-
-if 'fluxo' not in st.session_state: 
-    st.session_state.fluxo = carregar_fluxo_db(projeto_id)
-if 'indice_edicao' not in st.session_state: 
-    st.session_state.indice_edicao = None
-if 'num_opcoes' not in st.session_state: 
-    st.session_state.num_opcoes = 2 
+    st.header(f"👤 {projeto_id}")
+    if st.button("🔄 Sincronizar", use_container_width=True): st.session_state.fluxo = carregar_fluxo(); st.rerun()
+    if st.button("🚪 Sair", use_container_width=True): st.session_state["logado"] = False; st.rerun()
 
 c1, c2, c3 = st.columns([2.5, 1, 1.5])
-with c1: 
-    st.title("ZapFluxo Builder ⚡☁️")
-
-with c2: 
-    if client:
-        st.success("🟢 DB ON")
-    else:
-        st.error("🔴 DB OFF")
-
+with c1: st.title("ZapFluxo Builder ⚡")
+with c2: st.success("🟢 DB") if client else st.error("🔴 DB")
 with c3:
-    with st.popover("📲 Conectar WhatsApp", use_container_width=True):
-        if st.button("1. Gerar QR Code Real", use_container_width=True):
-            qr = obter_qr_code(projeto_id)
-            if qr and not qr.startswith("ERRO"): 
-                st.image(base64.b64decode(qr.split(",")[1] if "," in qr else qr), caption="Escaneie!")
-        
-        if st.button("2. 🎧 Ativar Robô", use_container_width=True, type="primary"):
-            if ativar_webhook(projeto_id):
-                st.success("Robô ativado!")
-            else:
-                st.error("Erro ao ativar robô.")
+    with st.popover("📲 Conectar Zap", use_container_width=True):
+        if st.button("1. Gerar QR Code", use_container_width=True):
+            res = requests.post(f"{EVO_URL}/instance/create", json={"instanceName": instancia_limpa, "qrcode": True}, headers={"apikey": EVO_KEY})
+            if "qrcode" in res.json(): st.image(base64.b64decode(res.json()["qrcode"]["base64"].split(",")[1]))
+        if st.button("2. Ativar Robô", type="primary", use_container_width=True):
+            st.success("ON!") if ativar_webhook() else st.error("Erro")
 st.divider()
 
-col_editor, col_visual = st.columns([1, 1.5])
-val_id, val_msg, val_opcoes, val_tipo_index = "", "", "", 0
-
+col_ed, col_vis = st.columns([1, 1.5])
 tipos = ["Texto", "Menu", "Áudio", "Imagem", "Robô IA"]
+val_id, val_msg, val_opc, v_idx = "", "", "", 0
 
 if st.session_state.indice_edicao is not None:
-    try:
-        b = st.session_state.fluxo[st.session_state.indice_edicao]
-        val_id, val_msg, val_opcoes = b['id'], b.get('msg', ''), b.get('opcoes', '')
-        val_tipo_index = tipos.index(b['tipo']) if b['tipo'] in tipos else 0
-    except: 
-        st.session_state.indice_edicao = None
+    b = st.session_state.fluxo[st.session_state.indice_edicao]
+    val_id, val_msg, val_opc, v_idx = b['id'], b.get('msg',''), b.get('opcoes',''), tipos.index(b['tipo'])
 
-with col_editor:
+with col_ed:
     with st.container(border=True):
-        st.subheader("📝 Configurar Bloco")
-        bid = st.text_input("ID do Bloco", value=val_id)
-        btype = st.selectbox("Tipo", tipos, index=val_tipo_index)
-        
-        content, routing = "", ""
-        upl = None
+        st.subheader("📝 Configurar")
+        bid = st.text_input("ID", value=val_id)
+        btype = st.selectbox("Tipo", tipos, index=v_idx)
+        content, routing, upl = "", "", None
         
         if btype == "Robô IA":
-            st.info("🧠 A IA conversará com o cliente. Dica: use {nome} para chamar o cliente pelo nome!")
-            content = st.text_area("Comportamento da IA", value=val_msg, height=150)
-            
-            st.write("---")
-            st.write("🚪 **Fuga do Loop (Opcional):** A IA pode mandar o cliente para outro bloco.")
-            c_ia1, c_ia2 = st.columns(2)
-            
-            # Recupera as opções de fuga salvas
-            val_cond = val_opcoes.split("|")[0] if "|" in val_opcoes else ""
-            val_dest = val_opcoes.split("|")[1] if "|" in val_opcoes else ""
-            
-            condicao_ia = c_ia1.text_input("Se o cliente...", placeholder="Ex: pedir a chave pix", value=val_cond)
-            destino_ia = c_ia2.text_input("Vá para o Bloco:", placeholder="Ex: bloco_pix", value=val_dest)
-            
-            routing = f"{condicao_ia}|{destino_ia}" if condicao_ia and destino_ia else ""
-            
-        elif btype == "Áudio":
-            upl = st.file_uploader("Arquivo", type=['mp3','ogg'])
-            content = f"🎵 Novo Áudio" if upl else val_msg
-            routing = st.text_input("Próximo ID", value=val_opcoes)
-            
-        elif btype == "Imagem":
-            upl = st.file_uploader("Foto", type=['png', 'jpg', 'jpeg'])
-            content = st.text_area("Legenda", value=val_msg if not val_msg.startswith("📸") else "")
-            if not content and not upl and val_msg: 
-                content = val_msg
-            routing = st.text_input("Próximo ID", value=val_opcoes)
-            
+            content = st.text_area("Treinamento (Use {nome})", value=val_msg, height=150)
+            v_c = val_opc.split("|")[0] if "|" in val_opc else ""
+            v_d = val_opc.split("|")[1] if "|" in val_opc else ""
+            c_f1, c_f2 = st.columns(2)
+            cond = c_f1.text_input("Se o cliente...", value=v_c, placeholder="pedir pix")
+            dest = c_f2.text_input("Vá para:", value=v_d, placeholder="id_bloco")
+            routing = f"{cond}|{dest}" if cond else ""
         elif btype == "Menu":
-            st.info("Dica: Use {nome} na mensagem do menu para personalizar!")
-            content = st.text_area("Mensagem do Menu", value=val_msg)
-            if st.button("➕"): 
-                st.session_state.num_opcoes += 1
-            linhas = val_opcoes.split("\n") if val_opcoes else []
+            content = st.text_area("Mensagem", value=val_msg)
+            linhas = val_opc.split("\n") if val_opc else []
             b_vals = [l.split(">")[0].strip() for l in linhas if ">" in l]
             d_vals = [l.split(">")[1].strip() for l in linhas if ">" in l]
-            
-            while len(b_vals) < st.session_state.num_opcoes: 
-                b_vals.append("")
-                d_vals.append("")
-            
-            opcoes_temp = []
+            if len(b_vals) > st.session_state.num_opcoes: st.session_state.num_opcoes = len(b_vals)
+            if st.button("➕ Opção"): st.session_state.num_opcoes += 1
+            while len(b_vals) < st.session_state.num_opcoes: b_vals.append(""); d_vals.append("")
+            tmp = []
             for i in range(st.session_state.num_opcoes):
-                c_btn, c_dst = st.columns(2)
-                v1 = c_btn.text_input(f"Opção {i+1}", value=b_vals[i], key=f"b_{i}")
-                v2 = c_dst.text_input(f"Destino {i+1}", value=d_vals[i], key=f"d_{i}")
-                if v1 and v2: 
-                    opcoes_temp.append(f"{v1} > {v2}")
-            routing = "\n".join(opcoes_temp)
-            
-        else: # Texto
-            st.info("Dica: Use {nome} na mensagem para personalizar!")
+                ca, cb = st.columns(2)
+                v1, v2 = ca.text_input(f"O{i+1}", b_vals[i], key=f"b_{i}"), cb.text_input(f"D{i+1}", d_vals[i], key=f"d_{i}")
+                if v1 and v2: tmp.append(f"{v1} > {v2}")
+            routing = "\n".join(tmp)
+        else:
             content = st.text_area("Mensagem", value=val_msg)
-            routing = st.text_input("Próximo ID", value=val_opcoes)
+            routing = st.text_input("Próximo ID", value=val_opc)
+            if btype in ["Áudio", "Imagem"]: upl = st.file_uploader("Upload", type=['mp3','ogg','png','jpg'])
 
-        if st.button("💾 Salvar Bloco", type="primary", use_container_width=True):
-            if bid:
-                novo = {"id": bid, "tipo": btype, "msg": content, "opcoes": routing}
-                if btype in ["Áudio", "Imagem"]:
-                    if upl: 
-                        novo["arquivo_b64"] = base64.b64encode(upl.read()).decode('utf-8')
-                    elif st.session_state.indice_edicao is not None: 
-                        novo["arquivo_b64"] = st.session_state.fluxo[st.session_state.indice_edicao].get("arquivo_b64", "")
-                    
-                    if btype == "Imagem" and not content: 
-                        novo["msg"] = "📸 [Sem legenda]"
-                
-                if st.session_state.indice_edicao is not None: 
-                    st.session_state.fluxo[st.session_state.indice_edicao] = novo
-                else: 
-                    st.session_state.fluxo.append(novo)
-                
-                salvar_fluxo_db(projeto_id, st.session_state.fluxo)
-                st.session_state.indice_edicao = None
-                st.rerun()
+        if st.button("💾 Salvar", type="primary", use_container_width=True):
+            novo = {"id": bid, "tipo": btype, "msg": content, "opcoes": routing}
+            if upl: novo["arquivo_b64"] = base64.b64encode(upl.read()).decode('utf-8')
+            elif st.session_state.indice_edicao is not None: novo["arquivo_b64"] = st.session_state.fluxo[st.session_state.indice_edicao].get("arquivo_b64", "")
+            
+            if st.session_state.indice_edicao is not None: st.session_state.fluxo[st.session_state.indice_edicao] = novo
+            else: st.session_state.fluxo.append(novo)
+            salvar_fluxo(st.session_state.fluxo); st.session_state.indice_edicao = None; st.rerun()
 
-# --- VISUALIZAÇÃO E LIVE CHAT ---
-with col_visual:
-    # 🚨 ADICIONAMOS A ABA DO LIVE CHAT AQUI
+with col_vis:
     t1, t2, t3 = st.tabs(["📋 Lista", "🕸️ Mapa", "👁️ Live Chat"])
-    
     with t1:
         for i, b in enumerate(st.session_state.fluxo):
             with st.expander(f"📍 {b['id']} ({b['tipo']})"):
                 st.write(b['msg'])
-                ce, cd = st.columns(2)
-                if ce.button("Editar", key=f"edit_{i}"): 
-                    st.session_state.indice_edicao = i
-                    st.rerun()
-                if cd.button("Excluir", key=f"del_{i}"): 
-                    st.session_state.fluxo.pop(i)
-                    salvar_fluxo_db(projeto_id, st.session_state.fluxo)
-                    st.rerun()
-                    
+                ca, cb = st.columns(2)
+                if ca.button("Editar", key=f"edit_{i}"): st.session_state.indice_edicao = i; st.rerun()
+                if cb.button("Excluir", key=f"del_{i}"): st.session_state.fluxo.pop(i); salvar_fluxo(st.session_state.fluxo); st.rerun()
     with t2:
         if st.session_state.fluxo:
-            dot = graphviz.Digraph(engine='dot')
-            dot.attr(rankdir='LR')
+            dot = graphviz.Digraph()
             for b in st.session_state.fluxo:
-                dot.node(b['id'], f"{b['id']}\n({b['tipo']})", shape="rect")
-                if b.get('opcoes') and b['tipo'] != "Robô IA": # Esconde roteamento fantasma da IA no mapa
+                dot.node(b['id'], b['id'])
+                if b.get('opcoes') and b['tipo'] != "Robô IA":
                     for l in b['opcoes'].split('\n'):
-                        if ">" in l: 
-                            dot.edge(b['id'], l.split(">")[1].strip(), label=l.split(">")[0].strip())
-                        elif l.strip(): 
-                            dot.edge(b['id'], l.strip())
+                        if ">" in l: dot.edge(b['id'], l.split(">")[1].strip())
             st.graphviz_chart(dot)
-            
     with t3:
-        st.subheader("🕵️‍♂️ Espionagem de Conversas")
-        if st.button("🔄 Atualizar Conversas", use_container_width=True):
-            st.rerun()
-            
-        if client:
-            sessoes_ativas = list(client["zapvoice_db"]["sessoes"].find({"instancia": projeto_id.replace(" ", "").replace("-", "")}))
-            if not sessoes_ativas:
-                st.info("Nenhuma conversa ativa no momento.")
-            else:
-                for s in sessoes_ativas:
-                    with st.expander(f"📱 Cliente: {s.get('numero')} | Bloco Atual: {s.get('bloco_id')}"):
-                        for msg in s.get("historico", []):
-                            if msg.startswith("Cliente:"):
-                                st.markdown(f"**🟢 {msg}**")
-                            else:
-                                st.markdown(f"🤖 {msg}")
+        if st.button("🔄 Atualizar Chat"): st.rerun()
+        sessoes = list(client["zapvoice_db"]["sessoes"].find({"instancia": instancia_limpa}))
+        for s in sessoes:
+            with st.expander(f"📱 {s.get('numero')} ({s.get('bloco_id')})"):
+                for m in s.get("historico", []): st.write(m)
