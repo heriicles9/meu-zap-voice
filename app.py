@@ -143,7 +143,6 @@ if 'indice_edicao' not in st.session_state:
 if 'num_opcoes' not in st.session_state: 
     st.session_state.num_opcoes = 2 
 
-# --- HEADER E BOTÕES CORRIGIDOS ---
 c1, c2, c3 = st.columns([2.5, 1, 1.5])
 with c1: 
     st.title("ZapFluxo Builder ⚡☁️")
@@ -168,11 +167,9 @@ with c3:
                 st.error("Erro ao ativar robô.")
 st.divider()
 
-# --- EDITOR DE BLOCOS ---
 col_editor, col_visual = st.columns([1, 1.5])
 val_id, val_msg, val_opcoes, val_tipo_index = "", "", "", 0
 
-# 🚨 A OPÇÃO DE "ROBÔ IA" ESTÁ AQUI
 tipos = ["Texto", "Menu", "Áudio", "Imagem", "Robô IA"]
 
 if st.session_state.indice_edicao is not None:
@@ -193,9 +190,21 @@ with col_editor:
         upl = None
         
         if btype == "Robô IA":
-            st.info("🧠 A IA assumirá a conversa neste bloco.")
-            content = st.text_area("Comportamento da IA (Ex: Você é o atendente da Pizzaria...)", value=val_msg, height=150)
-            routing = "" 
+            st.info("🧠 A IA conversará com o cliente. Dica: use {nome} para chamar o cliente pelo nome!")
+            content = st.text_area("Comportamento da IA", value=val_msg, height=150)
+            
+            st.write("---")
+            st.write("🚪 **Fuga do Loop (Opcional):** A IA pode mandar o cliente para outro bloco.")
+            c_ia1, c_ia2 = st.columns(2)
+            
+            # Recupera as opções de fuga salvas
+            val_cond = val_opcoes.split("|")[0] if "|" in val_opcoes else ""
+            val_dest = val_opcoes.split("|")[1] if "|" in val_opcoes else ""
+            
+            condicao_ia = c_ia1.text_input("Se o cliente...", placeholder="Ex: pedir a chave pix", value=val_cond)
+            destino_ia = c_ia2.text_input("Vá para o Bloco:", placeholder="Ex: bloco_pix", value=val_dest)
+            
+            routing = f"{condicao_ia}|{destino_ia}" if condicao_ia and destino_ia else ""
             
         elif btype == "Áudio":
             upl = st.file_uploader("Arquivo", type=['mp3','ogg'])
@@ -210,6 +219,7 @@ with col_editor:
             routing = st.text_input("Próximo ID", value=val_opcoes)
             
         elif btype == "Menu":
+            st.info("Dica: Use {nome} na mensagem do menu para personalizar!")
             content = st.text_area("Mensagem do Menu", value=val_msg)
             if st.button("➕"): 
                 st.session_state.num_opcoes += 1
@@ -231,6 +241,7 @@ with col_editor:
             routing = "\n".join(opcoes_temp)
             
         else: # Texto
+            st.info("Dica: Use {nome} na mensagem para personalizar!")
             content = st.text_area("Mensagem", value=val_msg)
             routing = st.text_input("Próximo ID", value=val_opcoes)
 
@@ -255,9 +266,11 @@ with col_editor:
                 st.session_state.indice_edicao = None
                 st.rerun()
 
-# --- VISUALIZAÇÃO ---
+# --- VISUALIZAÇÃO E LIVE CHAT ---
 with col_visual:
-    t1, t2 = st.tabs(["📋 Lista", "🕸️ Mapa"])
+    # 🚨 ADICIONAMOS A ABA DO LIVE CHAT AQUI
+    t1, t2, t3 = st.tabs(["📋 Lista", "🕸️ Mapa", "👁️ Live Chat"])
+    
     with t1:
         for i, b in enumerate(st.session_state.fluxo):
             with st.expander(f"📍 {b['id']} ({b['tipo']})"):
@@ -270,16 +283,35 @@ with col_visual:
                     st.session_state.fluxo.pop(i)
                     salvar_fluxo_db(projeto_id, st.session_state.fluxo)
                     st.rerun()
+                    
     with t2:
         if st.session_state.fluxo:
             dot = graphviz.Digraph(engine='dot')
             dot.attr(rankdir='LR')
             for b in st.session_state.fluxo:
                 dot.node(b['id'], f"{b['id']}\n({b['tipo']})", shape="rect")
-                if b.get('opcoes'):
+                if b.get('opcoes') and b['tipo'] != "Robô IA": # Esconde roteamento fantasma da IA no mapa
                     for l in b['opcoes'].split('\n'):
                         if ">" in l: 
                             dot.edge(b['id'], l.split(">")[1].strip(), label=l.split(">")[0].strip())
                         elif l.strip(): 
                             dot.edge(b['id'], l.strip())
             st.graphviz_chart(dot)
+            
+    with t3:
+        st.subheader("🕵️‍♂️ Espionagem de Conversas")
+        if st.button("🔄 Atualizar Conversas", use_container_width=True):
+            st.rerun()
+            
+        if client:
+            sessoes_ativas = list(client["zapvoice_db"]["sessoes"].find({"instancia": projeto_id.replace(" ", "").replace("-", "")}))
+            if not sessoes_ativas:
+                st.info("Nenhuma conversa ativa no momento.")
+            else:
+                for s in sessoes_ativas:
+                    with st.expander(f"📱 Cliente: {s.get('numero')} | Bloco Atual: {s.get('bloco_id')}"):
+                        for msg in s.get("historico", []):
+                            if msg.startswith("Cliente:"):
+                                st.markdown(f"**🟢 {msg}**")
+                            else:
+                                st.markdown(f"🤖 {msg}")
