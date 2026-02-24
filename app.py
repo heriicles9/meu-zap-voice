@@ -123,8 +123,15 @@ if 'indice_edicao' not in st.session_state: st.session_state.indice_edicao = Non
 if 'num_opcoes' not in st.session_state: st.session_state.num_opcoes = 2 
 
 c1, c2, c3 = st.columns([2.5, 1, 1.5])
-with c1: st.title("ZapFluxo Builder ⚡☁️")
-with c2: st.success("🟢 DB ON") if client else st.error("🔴 DB OFF")
+with c1: 
+    st.title("ZapFluxo Builder ⚡☁️")
+    
+with c2: 
+    if client:
+        st.success("🟢 ON")
+    else 
+        st.error("🔴 OFF")
+        
 with c3:
     with st.popover("📲 Conectar WhatsApp", use_container_width=True):
         if st.button("1. Gerar QR Code Real", use_container_width=True):
