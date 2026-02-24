@@ -28,7 +28,7 @@ def home(): return "<h1>🧠 O Cérebro do ZapFluxo + IA está Online! ⚡</h1>"
 
 # --- FUNÇÃO DA IA (GEMINI) 🧠 ---
 def consultar_gemini(treinamento, mensagem_cliente):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_KEY}"
     
     prompt = f"Você é um assistente de WhatsApp. Siga ESTRITAMENTE estas regras e comportamento:\n{treinamento}\n\nResponda de forma curta e natural a seguinte mensagem do cliente:\nCliente: {mensagem_cliente}"
     
