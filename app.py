@@ -193,8 +193,9 @@ with col_ed:
             st.session_state.indice_edicao = None
             st.rerun()
 
+# 🚨 A MÁGICA DO MINI CRM ACONTECE AQUI NA ABA 3
 with col_vis:
-    tab_lista, tab_mapa, tab_chat = st.tabs(["📋 Lista de Blocos", "🕸️ Mapa Visual", "👁️ Live Chat"])
+    tab_lista, tab_mapa, tab_chat = st.tabs(["📋 Lista", "🕸️ Mapa", "👁️ Live Chat"])
     with tab_lista:
         for i, b in enumerate(st.session_state.fluxo):
             with st.expander(f"📍 {b['id']} ({b['tipo']})"):
@@ -218,10 +219,34 @@ with col_vis:
                             dot.edge(b['id'], linha.split(">")[1].strip())
             st.graphviz_chart(dot)
     with tab_chat:
-        if st.button("🔄 Atualizar Conversas"):
+        if st.button("🔄 Atualizar Conversas", use_container_width=True):
             st.rerun()
         sessoes = list(client["zapvoice_db"]["sessoes"].find({"instancia": instancia_limpa}))
+        
+        if not sessoes:
+            st.info("Nenhuma conversa ativa no momento.")
+            
         for s in sessoes:
-            with st.expander(f"📱 {s.get('numero')} (Bloco: {s.get('bloco_id')})"):
+            # Puxa o nome personalizado ou usa o número como padrão
+            nome_exibicao = s.get('nome_personalizado', s.get('numero'))
+            id_sessao = str(s["_id"])
+            
+            with st.expander(f"📱 {nome_exibicao} (Bloco: {s.get('bloco_id')})"):
+                col_n, col_s, col_e = st.columns([3, 1, 1])
+                with col_n:
+                    novo_nome = st.text_input("Renomear", value=nome_exibicao, key=f"nome_{id_sessao}", label_visibility="collapsed")
+                with col_s:
+                    if st.button("💾", key=f"salvar_{id_sessao}", help="Salvar Nome", use_container_width=True):
+                        client["zapvoice_db"]["sessoes"].update_one({"_id": s["_id"]}, {"$set": {"nome_personalizado": novo_nome}})
+                        st.rerun()
+                with col_e:
+                    if st.button("🗑️", key=f"excluir_{id_sessao}", help="Excluir Chat", type="primary", use_container_width=True):
+                        client["zapvoice_db"]["sessoes"].delete_one({"_id": s["_id"]})
+                        st.rerun()
+                
+                st.divider()
                 for m in s.get("historico", []):
-                    st.write(m)
+                    if m.startswith("Cliente:"):
+                        st.markdown(f"**🟢 {m}**")
+                    else:
+                        st.markdown(f"🤖 {m}")
