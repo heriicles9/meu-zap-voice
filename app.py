@@ -32,13 +32,20 @@ if not st.session_state["logado"]:
     col_vazia1, col_centro, col_vazia2 = st.columns([1, 2, 1])
     with col_centro:
         
-        # 🚨 1. LOGO NA TELA DE LOGIN AQUI!
+        # 🚨 LOGO CENTRALIZADA SEM TEXTO E SEM BOTÃO DE AMPLIAR
         try:
-            st.image("logo.png", width=250)
+            with open("logo.png", "rb") as image_file:
+                encoded_string = base64.b64encode(image_file.read()).decode()
+            st.markdown(
+                f"""
+                <div style="display: flex; justify-content: center; margin-bottom: 30px;">
+                    <img src="data:image/png;base64,{encoded_string}" width="280" style="border-radius: 15px;">
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
         except:
-            pass # Se a logo não carregar, ele não quebra o site
-            
-        st.title("Plataforma ZapFluxo")
+            pass # Se a logo não carregar, ele segue o jogo sem quebrar
         
         if not client:
             st.error("🚨 Banco de dados desconectado.")
