@@ -276,10 +276,10 @@ with col_visual:
             with st.expander(f"📍 {b['id']} ({b['tipo']})"):
                 st.write(b['msg'])
                 ce, cd = st.columns(2)
-                if ce.button("Editar", key=f"e_{i}"): 
+                if ce.button("Editar", key=f"edit_{i}"): 
                     st.session_state.indice_edicao = i
                     st.rerun()
-                if cd.button("Excluir", key=f"d_{i}"): 
+                if cd.button("Excluir", key=f"del_{i}"): 
                     st.session_state.fluxo.pop(i)
                     salvar_fluxo_db(projeto_id, st.session_state.fluxo)
                     st.rerun()
