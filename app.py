@@ -29,18 +29,18 @@ if "logado" not in st.session_state:
     st.session_state["usuario"] = ""
 
 if not st.session_state["logado"]:
-    # 🚨 AJUSTE FINO AQUI: Mudamos de [1,2,1] para [2,1,2] para estreitar o centro
+    # 🚨 Voltamos para o modo "Normal/Largo" [1, 2, 1]
     col_vazia1, col_centro, col_vazia2 = st.columns([1, 2, 1])
     with col_centro:
         
-        # LOGO CENTRALIZADA
+        # 🚨 LOGO CENTRALIZADA E BEM MAIOR (width="380")
         try:
             with open("logo.png", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
             st.markdown(
                 f"""
                 <div style="display: flex; justify-content: center; margin-bottom: 20px;">
-                    <img src="data:image/png;base64,{encoded_string}" width="250" style="border-radius: 15px;">
+                    <img src="data:image/png;base64,{encoded_string}" width="380" style="border-radius: 15px;">
                 </div>
                 """,
                 unsafe_allow_html=True
@@ -54,11 +54,10 @@ if not st.session_state["logado"]:
         
         db = client["zapvoice_db"]
         
-        # ABAS DE LOGIN MAIS COMPACTAS
-        tab_login, tab_registro, tab_senha = st.tabs(["🔑 Entrar", "📝 Criar", "🔄 Senha"])
+        tab_login, tab_registro, tab_senha = st.tabs(["🔑 Entrar", "📝 Criar Conta", "🔄 Trocar Senha"])
         
         with tab_login:
-            st.write("") # Espacinho extra
+            st.write("")
             user_login = st.text_input("Usuário", key="ulogin").lower().strip()
             pass_login = st.text_input("Senha", type="password", key="plogin")
             
