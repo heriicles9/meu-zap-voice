@@ -30,7 +30,6 @@ def home(): return "<h1>🧠 O Cérebro do ZapFluxo + IA está Online! ⚡</h1>"
 def consultar_gemini(treinamento, mensagem_cliente):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
     
-    # Preparamos a mente da IA com a regra do cliente
     prompt = f"Você é um assistente de WhatsApp. Siga ESTRITAMENTE estas regras e comportamento:\n{treinamento}\n\nResponda de forma curta e natural a seguinte mensagem do cliente:\nCliente: {mensagem_cliente}"
     
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
@@ -40,9 +39,11 @@ def consultar_gemini(treinamento, mensagem_cliente):
         if res.status_code == 200:
             return res.json()['candidates'][0]['content']['parts'][0]['text']
         else:
-            return "🤖 [Estou processando muita informação, tente novamente em 1 minuto!]"
+            # 🚨 AGORA O ROBÔ VAI DEDURAR O ERRO EXATO DO GOOGLE!
+            print(f"💥 ERRO GEMINI: {res.text}")
+            return f"🤖 [Erro do Google! Código: {res.status_code}]"
     except Exception as e:
-        return "🤖 [Falha de conexão com a central neural.]"
+        return f"🤖 [Falha de conexão com a central neural: {e}]"
 
 # --- FUNÇÕES DE ENVIO ---
 def enviar_mensagem(instancia, numero, texto):
@@ -116,7 +117,7 @@ def webhook():
                 
                 if bloco_atual:
                     proximo_id = None
-                    # 🚨 Se estiver na IA, o robô NÃO avança de bloco. Ele fica conversando até a pessoa mandar "reset"
+                    # 🚨 Na IA, o robô NÃO avança de bloco.
                     if bloco_atual["tipo"] == "Robô IA":
                         proximo_id = None 
                     elif bloco_atual["tipo"] == "Menu":
@@ -136,7 +137,6 @@ def webhook():
             # 🚨 DECISÃO: O QUE ENVIAR PARA O CLIENTE?
             if bloco_atual:
                 if bloco_atual["tipo"] == "Robô IA":
-                    # Aqui a mágica acontece: O robô pensa antes de responder!
                     resposta_inteligente = consultar_gemini(bloco_atual["msg"], texto_recebido)
                     enviar_mensagem(instancia, numero_exato, resposta_inteligente)
                 elif bloco_atual["tipo"] == "Áudio":
