@@ -129,7 +129,7 @@ with c1:
 with c2: 
     if client:
         st.success("🟢 ON")
-    else 
+    else:
         st.error("🔴 OFF")
         
 with c3:
