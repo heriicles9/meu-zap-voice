@@ -17,53 +17,87 @@ except:
 
 @app.route('/')
 def home():
-    return "ZapFluxo v2.6 (Com CRM) Online 🚀"
+    return "ZapFluxo v3.1 (Escudo Anti-429 Máximo) Online 🚀🛡️"
 
-# --- FUNÇÃO DA IA COM ESCUDO ---
+# --- FUNÇÃO 1: IA PARA CONVERSAR (Com Loop de Insistência) ---
 def consultar_gemini(treinamento, historico_lista, condicao_saida=""):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
-    
     texto_historico = "\n".join(historico_lista)
     regra_fuga = ""
     if condicao_saida:
         regra_fuga = f"\n\nORDEM SECRETA: Se o cliente {condicao_saida}, você DEVE adicionar EXATAMENTE a palavra [MUDAR_BLOCO] no final da sua resposta."
     
     prompt = f"Você é um assistente de WhatsApp. Siga estas regras:\n{treinamento}{regra_fuga}\n\nHistórico:\n{texto_historico}\n\nSua resposta:"
-    
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
-    try:
-        res = requests.post(url, json=payload, headers={'Content-Type': 'application/json'}, timeout=15)
-        
-        if res.status_code == 429:
-            time.sleep(3)
-            res = requests.post(url, json=payload, headers={'Content-Type': 'application/json'}, timeout=15)
+    # 🚨 TENTA 3 VEZES ANTES DE DESISTIR!
+    for tentativa in range(3):
+        try:
+            res = requests.post(url, json=payload, headers={'Content-Type': 'application/json'}, timeout=20)
+            if res.status_code == 200:
+                texto = res.json()['candidates'][0]['content']['parts'][0]['text']
+                return texto.replace("João:", "").replace("Assistente:", "").strip()
+            elif res.status_code == 429:
+                # Se o Google barrar, espera 4 segundos e tenta de novo silenciosamente
+                time.sleep(4)
+            else:
+                return f"🤖 [Erro do Google! Código: {res.status_code}]"
+        except:
+            time.sleep(2)
             
-        if res.status_code == 200:
-            texto = res.json()['candidates'][0]['content']['parts'][0]['text']
-            return texto.replace("João:", "").replace("Assistente:", "").strip()
-        else:
-            return "😅 [Opa, recebi muitas mensagens ao mesmo tempo. Pode repetir em 1 minutinho?]"
+    return "😅 [Opa, o sistema deu uma congestionada aqui. Pode repetir?]"
+
+# --- FUNÇÃO 2: BAIXAR ÁUDIO DO WHATSAPP ---
+def obter_base64_da_mensagem(instancia, mensagem_obj):
+    url = f"{EVO_URL}/chat/getBase64FromMediaMessage/{instancia}"
+    headers = {"apikey": EVO_KEY}
+    try:
+        res = requests.post(url, json={"message": mensagem_obj}, headers=headers, timeout=15)
+        if res.status_code in [200, 201]:
+            b64 = res.json().get("base64", "")
+            return b64.split(",")[1] if "," in b64 else b64
     except:
-        return "🤖 [Falha na conexão com a inteligência central]"
+        pass
+    return None
+
+# --- FUNÇÃO 3: IA PARA TRANSCREVER ÁUDIO (Com Loop de Insistência) ---
+def transcrever_audio(audio_b64):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+    payload = {
+        "contents": [{
+            "parts": [
+                {"text": "Transcreva exatamente o que o cliente disse neste áudio, ignorando ruídos. Responda APENAS com a transcrição em texto."},
+                {"inline_data": {"mimeType": "audio/ogg", "data": audio_b64}}
+            ]
+        }]
+    }
+    
+    # 🚨 TENTA 3 VEZES ANTES DE DESISTIR!
+    for tentativa in range(3):
+        try:
+            res = requests.post(url, json=payload, headers={'Content-Type': 'application/json'}, timeout=20)
+            if res.status_code == 200:
+                return res.json()['candidates'][0]['content']['parts'][0]['text'].strip()
+            elif res.status_code == 429:
+                time.sleep(4)
+            else:
+                break
+        except:
+            time.sleep(2)
+            
+    return "[Áudio incompreensível ou falha na rede]"
 
 def enviar_mensagem(instancia, numero, texto, tipo="text", b64="", legenda=""):
     headers = {"apikey": EVO_KEY}
-    
     requests.post(f"{EVO_URL}/chat/sendPresence/{instancia}", json={"number": numero, "delay": 2000, "presence": "composing"}, headers=headers)
     time.sleep(2)
     
     if tipo == "text":
-        url = f"{EVO_URL}/message/sendText/{instancia}"
-        payload = {"number": numero, "textMessage": {"text": texto}, "options": {"delay": 0, "presence": "composing"}}
+        requests.post(f"{EVO_URL}/message/sendText/{instancia}", json={"number": numero, "textMessage": {"text": texto}, "options": {"delay": 0, "presence": "composing"}}, headers=headers)
     elif tipo == "audio":
-        url = f"{EVO_URL}/message/sendWhatsAppAudio/{instancia}"
-        payload = {"number": numero, "audioMessage": {"audio": b64}}
+        requests.post(f"{EVO_URL}/message/sendWhatsAppAudio/{instancia}", json={"number": numero, "audioMessage": {"audio": b64}}, headers=headers)
     elif tipo == "media":
-        url = f"{EVO_URL}/message/sendMedia/{instancia}"
-        payload = {"number": numero, "mediaMessage": {"mediatype": "image", "caption": legenda, "media": b64}}
-    
-    requests.post(url, json=payload, headers=headers)
+        requests.post(f"{EVO_URL}/message/sendMedia/{instancia}", json={"number": numero, "mediaMessage": {"mediatype": "image", "caption": legenda, "media": b64}}, headers=headers)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -86,8 +120,17 @@ def webhook():
         msg_obj = data.get('message', {})
         texto_cliente = msg_obj.get('conversation') or msg_obj.get('extendedTextMessage', {}).get('text') or ""
         
-        if not texto_cliente:
-            return jsonify({"status": "no_text"}), 200
+        is_audio = "audioMessage" in msg_obj
+        
+        if not texto_cliente and not is_audio:
+            return jsonify({"status": "no_text_or_audio"}), 200
+            
+        if is_audio:
+            b64_audio = obter_base64_da_mensagem(instancia, msg_obj)
+            if b64_audio:
+                texto_cliente = transcrever_audio(b64_audio)
+            else:
+                texto_cliente = "[Enviou um áudio, mas falhou ao baixar]"
 
         if texto_cliente.lower() == "reset":
             db["sessoes"].delete_one({"numero": numero_db, "instancia": instancia})
@@ -117,7 +160,7 @@ def webhook():
                 for linha in bloco_atual["opcoes"].split("\n"):
                     if ">" in linha:
                         btn, dst = linha.split(">")
-                        if texto_cliente.strip() == btn.strip():
+                        if texto_cliente.strip().lower() == btn.strip().lower():
                             proximo_id = dst.strip()
             elif bloco_atual["tipo"] != "Robô IA":
                 proximo_id = bloco_atual.get("opcoes")
@@ -126,7 +169,6 @@ def webhook():
                 bloco_atual = next((b for b in fluxo_doc["blocos"] if b["id"] == proximo_id), bloco_atual)
                 db["sessoes"].update_one({"_id": sessao["_id"]}, {"$set": {"bloco_id": bloco_atual["id"]}})
 
-        # 🚨 MAGICA DO NOME: Se você salvou um nome no painel, ele usa!
         if sessao.get("nome_personalizado"):
             nome_cliente = sessao.get("nome_personalizado")
 
