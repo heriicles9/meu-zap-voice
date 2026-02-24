@@ -13,7 +13,7 @@ EVO_KEY = "Mestra123"
 MONGO_URI = os.environ.get("MONGO_URI")
 
 # 🚨 A SUA CHAVE DA INTELIGÊNCIA ARTIFICIAL:
-GEMINI_KEY = "AIzaSyACYdQJKNDohhoCJFrZjCZuIWt_tKberDs"
+GEMINI_KEY = os.environ.get("GEMINI_KEY")
 
 # --- CONEXÃO BANCO ---
 try:
