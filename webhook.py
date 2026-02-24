@@ -17,11 +17,20 @@ except:
 
 @app.route('/')
 def home():
-    return "ZapFluxo v3.2 (Escudo Máximo + Gemini 2.5) Online 🚀🎧"
+    return "ZapFluxo v3.3 (UX Perfeita + Digitando Real) Online 🚀✍️"
 
-# --- FUNÇÃO 1: IA PARA CONVERSAR ---
+# --- FUNÇÃO NOVA: DIGITANDO ANTES DE PENSAR ---
+def simular_acao_ia(instancia, numero, tempo_ms=15000):
+    url = f"{EVO_URL}/chat/sendPresence/{instancia}"
+    headers = {"apikey": EVO_KEY}
+    payload = {"number": numero, "delay": tempo_ms, "presence": "composing"}
+    try:
+        # Manda o comando e não espera a resposta, segue o baile direto!
+        requests.post(url, json=payload, headers=headers, timeout=2)
+    except:
+        pass
+
 def consultar_gemini(treinamento, historico_lista, condicao_saida=""):
-    # 🚨 ATUALIZADO PARA O GEMINI 2.5 FLASH!
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_KEY}"
     texto_historico = "\n".join(historico_lista)
     regra_fuga = ""
@@ -46,13 +55,11 @@ def consultar_gemini(treinamento, historico_lista, condicao_saida=""):
             
     return "😅 [Opa, o sistema deu uma congestionada aqui. Pode repetir?]"
 
-# --- FUNÇÃO 2: BAIXAR ÁUDIO DO WHATSAPP ---
-def obter_base64_da_mensagem(instancia, data_completo):
+def obter_base64_da_mensagem(instancia, mensagem_obj):
     url = f"{EVO_URL}/chat/getBase64FromMediaMessage/{instancia}"
     headers = {"apikey": EVO_KEY}
     try:
-        # A API precisa do objeto 'data' inteiro para ler a Key e baixar a mídia
-        res = requests.post(url, json={"message": data_completo}, headers=headers, timeout=15)
+        res = requests.post(url, json={"message": mensagem_obj}, headers=headers, timeout=15)
         if res.status_code in [200, 201]:
             b64 = res.json().get("base64", "")
             return b64.split(",")[1] if "," in b64 else b64
@@ -60,9 +67,7 @@ def obter_base64_da_mensagem(instancia, data_completo):
         pass
     return None
 
-# --- FUNÇÃO 3: IA PARA TRANSCREVER ÁUDIO ---
 def transcrever_audio(audio_b64):
-    # 🚨 ATUALIZADO PARA O GEMINI 2.5 FLASH!
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_KEY}"
     payload = {
         "contents": [{
@@ -89,10 +94,13 @@ def transcrever_audio(audio_b64):
 
 def enviar_mensagem(instancia, numero, texto, tipo="text", b64="", legenda=""):
     headers = {"apikey": EVO_KEY}
-    requests.post(f"{EVO_URL}/chat/sendPresence/{instancia}", json={"number": numero, "delay": 2000, "presence": "composing"}, headers=headers)
-    time.sleep(2)
     
-    if tipo == "text":
+    # Para blocos que não são IA, ele faz um "digitando" rápido de 2 segs.
+    if tipo != "ia_ja_digitou":
+        requests.post(f"{EVO_URL}/chat/sendPresence/{instancia}", json={"number": numero, "delay": 2000, "presence": "composing"}, headers=headers)
+        time.sleep(2)
+    
+    if tipo == "text" or tipo == "ia_ja_digitou":
         requests.post(f"{EVO_URL}/message/sendText/{instancia}", json={"number": numero, "textMessage": {"text": texto}, "options": {"delay": 0, "presence": "composing"}}, headers=headers)
     elif tipo == "audio":
         requests.post(f"{EVO_URL}/message/sendWhatsAppAudio/{instancia}", json={"number": numero, "audioMessage": {"audio": b64}}, headers=headers)
@@ -120,15 +128,12 @@ def webhook():
         msg_obj = data.get('message', {})
         texto_cliente = msg_obj.get('conversation') or msg_obj.get('extendedTextMessage', {}).get('text') or ""
         
-        # 🚨 DETECTOR DE ÁUDIO BLINDADO
-        # Converte a mensagem toda em texto para achar o áudio não importa onde o WhatsApp esconda
         is_audio = "audioMessage" in str(msg_obj)
         
         if not texto_cliente and not is_audio:
             return jsonify({"status": "no_text_or_audio"}), 200
             
         if is_audio:
-            # Passamos a variável 'data' inteira para a API conseguir baixar
             b64_audio = obter_base64_da_mensagem(instancia, data)
             if b64_audio:
                 texto_cliente = transcrever_audio(b64_audio)
@@ -175,7 +180,12 @@ def webhook():
         if sessao.get("nome_personalizado"):
             nome_cliente = sessao.get("nome_personalizado")
 
+        # 🚨 A MÁGICA ACONTECE AQUI DENTRO DO BLOCO DA IA
         if bloco_atual["tipo"] == "Robô IA":
+            
+            # 1º Manda avisar o cliente: "João está digitando..."
+            simular_acao_ia(instancia, numero_jid)
+            
             historico = sessao.get("historico", [])
             historico.append(f"Cliente: {texto_cliente}")
             historico = historico[-10:] 
@@ -184,6 +194,7 @@ def webhook():
             if "|" in bloco_atual["opcoes"]:
                 condicao, destino = bloco_atual["opcoes"].split("|")
             
+            # 2º Agora sim, pede pro Google pensar enquanto o cliente vê a tela piscar
             resposta_ia = consultar_gemini(bloco_atual["msg"], historico, condicao)
             
             mudar_bloco = "[MUDAR_BLOCO]" in resposta_ia
@@ -192,7 +203,8 @@ def webhook():
             historico.append(f"João: {resposta_ia}")
             db["sessoes"].update_one({"_id": sessao["_id"]}, {"$set": {"historico": historico}})
             
-            enviar_mensagem(instancia, numero_jid, resposta_ia)
+            # 3º Manda a resposta final cortando o "digitando" na hora!
+            enviar_mensagem(instancia, numero_jid, resposta_ia, tipo="ia_ja_digitou")
             
             if mudar_bloco and destino:
                 db["sessoes"].update_one({"_id": sessao["_id"]}, {"$set": {"bloco_id": destino.strip()}})
@@ -212,6 +224,5 @@ def webhook():
     return jsonify({"status": "success"}), 200
 
 if __name__ == '__main__':
-    # 🚨 Puxa exatamente a porta que o Render exige!
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
