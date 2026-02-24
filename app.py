@@ -30,7 +30,7 @@ if "logado" not in st.session_state:
 
 if not st.session_state["logado"]:
     # 🚨 AJUSTE FINO AQUI: Mudamos de [1,2,1] para [2,1,2] para estreitar o centro
-    col_vazia1, col_centro, col_vazia2 = st.columns([2, 1, 2])
+    col_vazia1, col_centro, col_vazia2 = st.columns([1, 2, 1])
     with col_centro:
         
         # LOGO CENTRALIZADA
