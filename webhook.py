@@ -12,10 +12,9 @@ EVO_URL = "https://api-zap-motor.onrender.com"
 EVO_KEY = "Mestra123"
 MONGO_URI = os.environ.get("MONGO_URI")
 
-# 🚨 A CHAVE PROTEGIDA DA INTELIGÊNCIA ARTIFICIAL:
+# 🚨 CHAVE SEGURA NO RENDER
 GEMINI_KEY = os.environ.get("GEMINI_KEY")
 
-# --- CONEXÃO BANCO ---
 try:
     client = pymongo.MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
     client.admin.command('ping') 
@@ -24,27 +23,26 @@ except Exception as e:
     client = None
 
 @app.route('/', methods=['GET'])
-def home(): return "<h1>🧠 Cérebro do ZapFluxo + IA (Com Memória) Online! ⚡</h1>"
+def home(): return "<h1>🧠 Cérebro do ZapFluxo v2.0 (Com Variáveis e Roteamento) ⚡</h1>"
 
-# --- FUNÇÃO DA IA (GEMINI) COM MEMÓRIA 🧠 ---
-def consultar_gemini(treinamento, historico_lista):
+# --- FUNÇÃO DA IA ---
+def consultar_gemini(treinamento, historico_lista, condicao_saida=""):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_KEY}"
     
-    # Juntamos as regras com o histórico da conversa
     texto_historico = "\n".join(historico_lista)
-    prompt = f"Você é um assistente de WhatsApp. Siga ESTRITAMENTE estas regras:\n{treinamento}\n\nVeja o histórico da conversa abaixo e responda de forma natural, continuando o papo a partir da última mensagem do cliente.\n\nHISTÓRICO:\n{texto_historico}\n\nSua resposta (curta e sem rótulos):"
+    
+    # Se existir uma condição de saída, damos uma ordem extra secreta para a IA
+    regra_fuga = f"\n\nORDEM SECRETA: Se o cliente {condicao_saida}, você DEVE adicionar EXATAMENTE a palavra [MUDAR_BLOCO] no final da sua resposta." if condicao_saida else ""
+    
+    prompt = f"Você é um assistente de WhatsApp. Siga ESTRITAMENTE estas regras:\n{treinamento}{regra_fuga}\n\nVeja o histórico da conversa abaixo e responda de forma natural.\n\nHISTÓRICO:\n{texto_historico}\n\nSua resposta:"
     
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
     try:
         res = requests.post(url, json=payload, headers={'Content-Type': 'application/json'}, timeout=15)
         if res.status_code == 200:
-            texto_limpo = res.json()['candidates'][0]['content']['parts'][0]['text']
-            # Limpa caso a IA coloque "João: " na frente da resposta
-            return texto_limpo.replace("João:", "").replace("Assistente:", "").strip()
-        else:
-            print(f"💥 ERRO GEMINI: {res.text}")
-            return f"🤖 [Erro do Google! Código: {res.status_code}]"
+            return res.json()['candidates'][0]['content']['parts'][0]['text'].replace("João:", "").replace("Assistente:", "").strip()
+        return f"🤖 [Erro do Google! Código: {res.status_code}]"
     except Exception as e:
         return f"🤖 [Falha neural: {e}]"
 
@@ -74,7 +72,7 @@ def enviar_imagem(instancia, numero, b64_img, legenda):
     try: requests.post(f"{EVO_URL}/message/sendMedia/{instancia}", json={"number": numero, "options": {"delay": 0}, "mediaMessage": {"mediatype": "image", "caption": legenda, "media": b64_img}}, headers=headers, timeout=20)
     except: pass
 
-# --- ROTEADOR (O Cérebro do Robô) ---
+# --- ROTEADOR ---
 @app.route('/webhook', methods=['POST'])
 def webhook():
     if not client: return jsonify({"erro": "Sem banco"}), 500
@@ -87,6 +85,9 @@ def webhook():
             msg_data = dados.get('data', {}).get('message', {})
             key = dados.get('data', {}).get('key', {})
             if key.get('fromMe'): return jsonify({"status": "ignorado"}), 200
+            
+            # 🚨 MÁGICA 1: PEGANDO O NOME DO CLIENTE!
+            nome_cliente = dados.get('data', {}).get('pushName', 'Cliente')
                 
             numero_exato = key.get('remoteJid', '')
             if "@lid" in numero_exato: numero_exato = "557583479259"
@@ -113,7 +114,6 @@ def webhook():
             
             if not sessao:
                 bloco_atual = blocos[0]
-                # 🚨 Cria a sessão já com o caderninho de memória vazio
                 db["sessoes"].insert_one({"numero": numero_db, "instancia": instancia, "bloco_id": bloco_atual["id"], "historico": []})
                 sessao = db["sessoes"].find_one({"numero": numero_db, "instancia": instancia})
             else:
@@ -138,37 +138,47 @@ def webhook():
                             bloco_atual = novo_bloco
                             db["sessoes"].update_one({"_id": sessao["_id"]}, {"$set": {"bloco_id": bloco_atual["id"]}})
             
-            # 🚨 DECISÃO: O QUE ENVIAR PARA O CLIENTE?
             if bloco_atual:
                 if bloco_atual["tipo"] == "Robô IA":
-                    # 1. Pega o histórico antigo (ou cria um novo se não tiver)
                     historico = sessao.get("historico", [])
-                    
-                    # 2. Anota a mensagem nova do cliente
                     historico.append(f"Cliente: {texto_recebido}")
-                    
-                    # 3. Mantém só as últimas 10 mensagens para não pesar o robô
                     historico = historico[-10:]
                     
-                    # 4. Manda a IA pensar baseada no histórico todo!
-                    resposta_inteligente = consultar_gemini(bloco_atual["msg"], historico)
+                    # 🚨 MÁGICA 2: FUGA DO LOOP
+                    opcoes_ia = bloco_atual.get("opcoes", "")
+                    condicao = opcoes_ia.split("|")[0] if "|" in opcoes_ia else ""
+                    destino = opcoes_ia.split("|")[1] if "|" in opcoes_ia else ""
                     
-                    # 5. Anota a resposta da IA no caderninho
-                    historico.append(f"João: {resposta_inteligente}")
+                    resposta_inteligente = consultar_gemini(bloco_atual["msg"], historico, condicao)
                     
-                    # 6. Salva o caderninho atualizado no Banco de Dados
+                    deve_mudar = False
+                    if "[MUDAR_BLOCO]" in resposta_inteligente:
+                        resposta_inteligente = resposta_inteligente.replace("[MUDAR_BLOCO]", "").strip()
+                        deve_mudar = True
+                    
+                    # 🚨 Troca a tag {nome} pelo nome real antes de enviar
+                    resposta_inteligente = resposta_inteligente.replace("{nome}", nome_cliente)
+                    historico.append(f"IA: {resposta_inteligente}")
+                    
                     db["sessoes"].update_one({"_id": sessao["_id"]}, {"$set": {"historico": historico}})
-                    
                     enviar_mensagem(instancia, numero_exato, resposta_inteligente)
                     
+                    if deve_mudar and destino:
+                        # Muda o bloco silenciosamente para a próxima interação ou manda o bloco seguinte logo
+                        db["sessoes"].update_one({"_id": sessao["_id"]}, {"$set": {"bloco_id": destino}})
+                        
                 elif bloco_atual["tipo"] == "Áudio":
                     b64 = bloco_atual.get("arquivo_b64", "")
                     if b64: enviar_audio(instancia, numero_exato, b64)
                 elif bloco_atual["tipo"] == "Imagem":
                     b64 = bloco_atual.get("arquivo_b64", "")
-                    if b64: enviar_imagem(instancia, numero_exato, b64, bloco_atual.get("msg", ""))
+                    # Troca a tag {nome} na legenda da foto
+                    legenda = bloco_atual.get("msg", "").replace("{nome}", nome_cliente)
+                    if b64: enviar_imagem(instancia, numero_exato, b64, legenda)
                 else:
-                    enviar_mensagem(instancia, numero_exato, bloco_atual["msg"])
+                    # Troca a tag {nome} no texto e menu normais
+                    texto_formatado = bloco_atual["msg"].replace("{nome}", nome_cliente)
+                    enviar_mensagem(instancia, numero_exato, texto_formatado)
                 
     except Exception as e:
         traceback.print_exc()
