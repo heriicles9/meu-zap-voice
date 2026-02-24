@@ -12,7 +12,7 @@ EVO_URL = "https://api-zap-motor.onrender.com"
 EVO_KEY = "Mestra123"
 MONGO_URI = os.environ.get("MONGO_URI")
 
-# 🚨 A SUA CHAVE DA INTELIGÊNCIA ARTIFICIAL:
+# 🚨 A CHAVE PROTEGIDA DA INTELIGÊNCIA ARTIFICIAL:
 GEMINI_KEY = os.environ.get("GEMINI_KEY")
 
 # --- CONEXÃO BANCO ---
@@ -24,26 +24,29 @@ except Exception as e:
     client = None
 
 @app.route('/', methods=['GET'])
-def home(): return "<h1>🧠 O Cérebro do ZapFluxo + IA está Online! ⚡</h1>"
+def home(): return "<h1>🧠 Cérebro do ZapFluxo + IA (Com Memória) Online! ⚡</h1>"
 
-# --- FUNÇÃO DA IA (GEMINI) 🧠 ---
-def consultar_gemini(treinamento, mensagem_cliente):
+# --- FUNÇÃO DA IA (GEMINI) COM MEMÓRIA 🧠 ---
+def consultar_gemini(treinamento, historico_lista):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_KEY}"
     
-    prompt = f"Você é um assistente de WhatsApp. Siga ESTRITAMENTE estas regras e comportamento:\n{treinamento}\n\nResponda de forma curta e natural a seguinte mensagem do cliente:\nCliente: {mensagem_cliente}"
+    # Juntamos as regras com o histórico da conversa
+    texto_historico = "\n".join(historico_lista)
+    prompt = f"Você é um assistente de WhatsApp. Siga ESTRITAMENTE estas regras:\n{treinamento}\n\nVeja o histórico da conversa abaixo e responda de forma natural, continuando o papo a partir da última mensagem do cliente.\n\nHISTÓRICO:\n{texto_historico}\n\nSua resposta (curta e sem rótulos):"
     
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
     try:
         res = requests.post(url, json=payload, headers={'Content-Type': 'application/json'}, timeout=15)
         if res.status_code == 200:
-            return res.json()['candidates'][0]['content']['parts'][0]['text']
+            texto_limpo = res.json()['candidates'][0]['content']['parts'][0]['text']
+            # Limpa caso a IA coloque "João: " na frente da resposta
+            return texto_limpo.replace("João:", "").replace("Assistente:", "").strip()
         else:
-            # 🚨 AGORA O ROBÔ VAI DEDURAR O ERRO EXATO DO GOOGLE!
             print(f"💥 ERRO GEMINI: {res.text}")
             return f"🤖 [Erro do Google! Código: {res.status_code}]"
     except Exception as e:
-        return f"🤖 [Falha de conexão com a central neural: {e}]"
+        return f"🤖 [Falha neural: {e}]"
 
 # --- FUNÇÕES DE ENVIO ---
 def enviar_mensagem(instancia, numero, texto):
@@ -110,14 +113,15 @@ def webhook():
             
             if not sessao:
                 bloco_atual = blocos[0]
-                db["sessoes"].insert_one({"numero": numero_db, "instancia": instancia, "bloco_id": bloco_atual["id"]})
+                # 🚨 Cria a sessão já com o caderninho de memória vazio
+                db["sessoes"].insert_one({"numero": numero_db, "instancia": instancia, "bloco_id": bloco_atual["id"], "historico": []})
+                sessao = db["sessoes"].find_one({"numero": numero_db, "instancia": instancia})
             else:
                 bloco_id_atual = sessao["bloco_id"]
                 bloco_atual = next((b for b in blocos if b["id"] == bloco_id_atual), None)
                 
                 if bloco_atual:
                     proximo_id = None
-                    # 🚨 Na IA, o robô NÃO avança de bloco.
                     if bloco_atual["tipo"] == "Robô IA":
                         proximo_id = None 
                     elif bloco_atual["tipo"] == "Menu":
@@ -137,8 +141,26 @@ def webhook():
             # 🚨 DECISÃO: O QUE ENVIAR PARA O CLIENTE?
             if bloco_atual:
                 if bloco_atual["tipo"] == "Robô IA":
-                    resposta_inteligente = consultar_gemini(bloco_atual["msg"], texto_recebido)
+                    # 1. Pega o histórico antigo (ou cria um novo se não tiver)
+                    historico = sessao.get("historico", [])
+                    
+                    # 2. Anota a mensagem nova do cliente
+                    historico.append(f"Cliente: {texto_recebido}")
+                    
+                    # 3. Mantém só as últimas 10 mensagens para não pesar o robô
+                    historico = historico[-10:]
+                    
+                    # 4. Manda a IA pensar baseada no histórico todo!
+                    resposta_inteligente = consultar_gemini(bloco_atual["msg"], historico)
+                    
+                    # 5. Anota a resposta da IA no caderninho
+                    historico.append(f"João: {resposta_inteligente}")
+                    
+                    # 6. Salva o caderninho atualizado no Banco de Dados
+                    db["sessoes"].update_one({"_id": sessao["_id"]}, {"$set": {"historico": historico}})
+                    
                     enviar_mensagem(instancia, numero_exato, resposta_inteligente)
+                    
                 elif bloco_atual["tipo"] == "Áudio":
                     b64 = bloco_atual.get("arquivo_b64", "")
                     if b64: enviar_audio(instancia, numero_exato, b64)
