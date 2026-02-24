@@ -112,9 +112,20 @@ with c2:
 with c3:
     with st.popover("📲 Conectar Zap", use_container_width=True):
         if st.button("1. Gerar QR Code", use_container_width=True):
-            res = requests.post(f"{EVO_URL}/instance/create", json={"instanceName": instancia_limpa, "qrcode": True}, headers={"apikey": EVO_KEY})
-            if "qrcode" in res.json():
-                st.image(base64.b64decode(res.json()["qrcode"]["base64"].split(",")[1]))
+            headers = {"apikey": EVO_KEY}
+            # 1º Tenta forçar o QR Code da conexão fantasma
+            res_conn = requests.get(f"{EVO_URL}/instance/connect/{instancia_limpa}", headers=headers)
+            
+            if res_conn.status_code == 200 and "base64" in res_conn.json():
+                st.image(base64.b64decode(res_conn.json()["base64"].split(",")[1]))
+            else:
+                # 2º Se não tiver vaga fantasma, cria uma nova do zero
+                res_create = requests.post(f"{EVO_URL}/instance/create", json={"instanceName": instancia_limpa, "qrcode": True}, headers=headers)
+                if "qrcode" in res_create.json():
+                    st.image(base64.b64decode(res_create.json()["qrcode"]["base64"].split(",")[1]))
+                else:
+                    st.error("Erro na API. Atualize a página.")
+                    
         if st.button("2. Ativar Robô", type="primary", use_container_width=True):
             if ativar_webhook():
                 st.success("Robô Ativo!")
