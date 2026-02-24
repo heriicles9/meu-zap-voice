@@ -93,6 +93,8 @@ if 'indice_edicao' not in st.session_state: st.session_state.indice_edicao = Non
 if 'num_opcoes' not in st.session_state: st.session_state.num_opcoes = 2
 
 with st.sidebar:
+    st.image("logo.png", use_container_width=True)
+    
     st.header(f"👤 {projeto_id}")
     if st.button("🔄 Sincronizar", use_container_width=True):
         st.session_state.fluxo = carregar_fluxo()
