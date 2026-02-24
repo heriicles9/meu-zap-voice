@@ -47,11 +47,12 @@ def consultar_gemini(treinamento, historico_lista, condicao_saida=""):
     return "😅 [Opa, o sistema deu uma congestionada aqui. Pode repetir?]"
 
 # --- FUNÇÃO 2: BAIXAR ÁUDIO DO WHATSAPP ---
-def obter_base64_da_mensagem(instancia, mensagem_obj):
+def obter_base64_da_mensagem(instancia, data_completo):
     url = f"{EVO_URL}/chat/getBase64FromMediaMessage/{instancia}"
     headers = {"apikey": EVO_KEY}
     try:
-        res = requests.post(url, json={"message": mensagem_obj}, headers=headers, timeout=15)
+        # A API precisa do objeto 'data' inteiro para ler a Key e baixar a mídia
+        res = requests.post(url, json={"message": data_completo}, headers=headers, timeout=15)
         if res.status_code in [200, 201]:
             b64 = res.json().get("base64", "")
             return b64.split(",")[1] if "," in b64 else b64
@@ -119,17 +120,20 @@ def webhook():
         msg_obj = data.get('message', {})
         texto_cliente = msg_obj.get('conversation') or msg_obj.get('extendedTextMessage', {}).get('text') or ""
         
-        is_audio = "audioMessage" in msg_obj
+        # 🚨 DETECTOR DE ÁUDIO BLINDADO
+        # Converte a mensagem toda em texto para achar o áudio não importa onde o WhatsApp esconda
+        is_audio = "audioMessage" in str(msg_obj)
         
         if not texto_cliente and not is_audio:
             return jsonify({"status": "no_text_or_audio"}), 200
             
         if is_audio:
-            b64_audio = obter_base64_da_mensagem(instancia, msg_obj)
+            # Passamos a variável 'data' inteira para a API conseguir baixar
+            b64_audio = obter_base64_da_mensagem(instancia, data)
             if b64_audio:
                 texto_cliente = transcrever_audio(b64_audio)
             else:
-                texto_cliente = "[Enviou um áudio, mas falhou ao baixar]"
+                texto_cliente = "[O cliente enviou um áudio, mas o sistema falhou ao baixar o arquivo]"
 
         if texto_cliente.lower() == "reset":
             db["sessoes"].delete_one({"numero": numero_db, "instancia": instancia})
