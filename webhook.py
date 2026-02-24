@@ -17,7 +17,7 @@ except:
 
 @app.route('/')
 def home():
-    return "ZapFluxo v2.5 Online 🚀"
+    return "ZapFluxo v2.6 (Com CRM) Online 🚀"
 
 # --- FUNÇÃO DA IA COM ESCUDO ---
 def consultar_gemini(treinamento, historico_lista, condicao_saida=""):
@@ -35,7 +35,6 @@ def consultar_gemini(treinamento, historico_lista, condicao_saida=""):
     try:
         res = requests.post(url, json=payload, headers={'Content-Type': 'application/json'}, timeout=15)
         
-        # TENTATIVA 2 SE DER ERRO 429 (LIMITE DE VELOCIDADE)
         if res.status_code == 429:
             time.sleep(3)
             res = requests.post(url, json=payload, headers={'Content-Type': 'application/json'}, timeout=15)
@@ -51,7 +50,6 @@ def consultar_gemini(treinamento, historico_lista, condicao_saida=""):
 def enviar_mensagem(instancia, numero, texto, tipo="text", b64="", legenda=""):
     headers = {"apikey": EVO_KEY}
     
-    # Simula digitando...
     requests.post(f"{EVO_URL}/chat/sendPresence/{instancia}", json={"number": numero, "delay": 2000, "presence": "composing"}, headers=headers)
     time.sleep(2)
     
@@ -91,7 +89,6 @@ def webhook():
         if not texto_cliente:
             return jsonify({"status": "no_text"}), 200
 
-        # RESETAR CONVERSA
         if texto_cliente.lower() == "reset":
             db["sessoes"].delete_one({"numero": numero_db, "instancia": instancia})
             enviar_mensagem(instancia, numero_jid, "🔄 Conversa resetada!")
@@ -129,11 +126,14 @@ def webhook():
                 bloco_atual = next((b for b in fluxo_doc["blocos"] if b["id"] == proximo_id), bloco_atual)
                 db["sessoes"].update_one({"_id": sessao["_id"]}, {"$set": {"bloco_id": bloco_atual["id"]}})
 
-        # PROCESSAR RESPOSTA
+        # 🚨 MAGICA DO NOME: Se você salvou um nome no painel, ele usa!
+        if sessao.get("nome_personalizado"):
+            nome_cliente = sessao.get("nome_personalizado")
+
         if bloco_atual["tipo"] == "Robô IA":
             historico = sessao.get("historico", [])
             historico.append(f"Cliente: {texto_cliente}")
-            historico = historico[-10:] # Mantém apenas as últimas 10
+            historico = historico[-10:] 
             
             condicao, destino = ("", "")
             if "|" in bloco_atual["opcoes"]:
