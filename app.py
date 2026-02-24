@@ -84,7 +84,11 @@ with st.sidebar:
 
 c1, c2, c3 = st.columns([2.5, 1, 1.5])
 with c1: st.title("ZapFluxo Builder ⚡")
-with c2: st.success("🟢 DB") if client else st.error("🔴 DB")
+with c2: 
+    if  client:
+         st.success("🟢 DB")
+    else:
+        st.error("🔴 DB")
 with c3:
     with st.popover("📲 Conectar Zap", use_container_width=True):
         if st.button("1. Gerar QR Code", use_container_width=True):
