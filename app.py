@@ -103,10 +103,8 @@ def salvar_fluxo(lista, p_nome):
 with st.sidebar:
     try: st.image("logo.png", use_container_width=True)
     except: pass
-    
     st.divider()
     st.subheader("📁 Meus Projetos")
-    
     lista_p = listar_projetos()
     proj_selecionado = st.selectbox("Abrir Pasta:", lista_p, index=lista_p.index(st.session_state["projeto_ativo"]) if st.session_state["projeto_ativo"] in lista_p else 0)
     
@@ -124,23 +122,17 @@ with st.sidebar:
                 st.rerun()
 
     st.divider()
-    st.header(f"👤 {st.session_state['usuario']}")
-    if not st.session_state["plano_ativo"]:
-        st.markdown(f'<a href="{link_asaas}" target="_blank" style="text-decoration:none;"><button style="width:100%;background-color:#28a745;color:white;border:none;padding:10px;border-radius:5px;cursor:pointer;font-weight:bold;">💎 Seja Plano Pro</button></a>', unsafe_allow_html=True)
-    
-    if st.button("🔄 Sincronizar"): st.rerun()
-    if st.button("🚪 Sair"): st.session_state.logado = False; st.rerun()
+    if st.button("🚪 Sair", use_container_width=True):
+        st.session_state.logado = False; st.rerun()
 
-# --- INSTÂNCIA ---
+# --- IDs ---
 projeto_id_unico = f"{st.session_state['usuario']}_{st.session_state['projeto_ativo']}"
 instancia_limpa = projeto_id_unico.replace(" ", "").replace("-", "").lower()
 
 # --- TRAVA MONETIZAÇÃO ---
-agora = datetime.datetime.now()
 v_t = st.session_state["vencimento_teste"]
 if isinstance(v_t, str): v_t = datetime.datetime.fromisoformat(v_t.replace("Z", ""))
-dias_r = (v_t - agora).days
-
+dias_r = (v_t - datetime.datetime.now()).days
 if not st.session_state["plano_ativo"] and dias_r < 0:
     st.error("⏳ Teste Expirado!"); st.stop()
 
@@ -151,27 +143,30 @@ if 'num_opcoes' not in st.session_state: st.session_state.num_opcoes = 2
 
 c1, c2, c3 = st.columns([2.5, 1, 1.5])
 with c1: st.title(f"ZapFluxo: {st.session_state['projeto_ativo']} ⚡")
-with c2:
-    if client: st.success("🟢 DB Ativo")
-    else: st.error("🔴 DB Offline")
 with c3:
     with st.popover("📲 Conectar Zap", use_container_width=True):
-        if st.button("🧹 Limpar Conexão"):
+        if st.button("🧹 Limpar Conexão (Reset)"):
             requests.delete(f"{EVO_URL}/instance/delete/{instancia_limpa}", headers={"apikey": EVO_KEY})
-            st.rerun()
+            st.success("Reiniciando..."); time.sleep(1); st.rerun()
         st.divider()
         if st.button("Gerar QR Code"):
+            # Sempre tenta criar antes para garantir modo QR
+            requests.post(f"{EVO_URL}/instance/create", json={"instanceName": instancia_limpa, "qrcode": True}, headers={"apikey": EVO_KEY})
             res = requests.get(f"{EVO_URL}/instance/connect/{instancia_limpa}", headers={"apikey": EVO_KEY})
-            if res.status_code == 200 and "base64" in res.json():
-                st.image(base64.b64decode(res.json()["base64"].split(",")[1]))
-            else:
-                requests.post(f"{EVO_URL}/instance/create", json={"instanceName": instancia_limpa, "qrcode": True}, headers={"apikey": EVO_KEY})
-                st.info("Criando... Clique novamente.")
+            if "base64" in res.json(): st.image(base64.b64decode(res.json()["base64"].split(",")[1]))
         st.divider()
-        n_zap = st.text_input("Número (Com 55)", key="nzap")
+        n_zap = st.text_input("Número (Com 55)", key="nzap", placeholder="5511999999999")
         if st.button("Gerar Código"):
-            res = requests.get(f"{EVO_URL}/instance/connect/{instancia_limpa}?number={n_zap}", headers={"apikey": EVO_KEY})
-            if "pairingCode" in res.json(): st.success(f"Código: **{res.json()['pairingCode']}**")
+            if n_zap:
+                # 🚨 TRUQUE: Deleta e recria em modo NO-QR para o código funcionar
+                requests.delete(f"{EVO_URL}/instance/delete/{instancia_limpa}", headers={"apikey": EVO_KEY})
+                time.sleep(1)
+                requests.post(f"{EVO_URL}/instance/create", json={"instanceName": instancia_limpa, "qrcode": False}, headers={"apikey": EVO_KEY})
+                time.sleep(1)
+                res = requests.get(f"{EVO_URL}/instance/connect/{instancia_limpa}?number={n_zap}", headers={"apikey": EVO_KEY})
+                cod = res.json().get("pairingCode")
+                if cod: st.success(f"Código: **{cod}**")
+                else: st.error("Erro. Tente novamente.")
         st.divider()
         if st.button("🚀 Ativar Robô", type="primary"):
             requests.post(f"{EVO_URL}/webhook/set/{instancia_limpa}", json={"enabled": True, "url": WEBHOOK_URL, "webhookByEvents": False, "events": ["MESSAGES_UPSERT"]}, headers={"apikey": EVO_KEY})
@@ -179,7 +174,7 @@ with c3:
 
 st.divider()
 
-# --- BUILDER (RESTAURAÇÃO DO MENU AQUI) ---
+# --- BUILDER (RESTAURADO) ---
 col_ed, col_vis = st.columns([1, 1.5])
 tipos = ["Texto", "Menu", "Áudio", "Imagem", "Robô IA"]
 val_id, val_msg, val_opc, v_idx = "", "", "", 0
@@ -194,47 +189,34 @@ with col_ed:
         st.subheader("📝 Configurar Bloco")
         bid = st.text_input("ID do Bloco", value=val_id)
         btype = st.selectbox("Tipo", tipos, index=v_idx)
-        
         content, routing, upl = "", "", None
         
         if btype == "Robô IA":
             content = st.text_area("Treinamento IA", value=val_msg, height=150)
-            v_c = val_opc.split("|")[0] if "|" in val_opc else ""
-            v_d = val_opc.split("|")[1] if "|" in val_opc else ""
-            cf1, cf2 = st.columns(2)
-            c_s = cf1.text_input("Gatilho", value=v_c)
-            d_s = cf2.text_input("Destino", value=v_d)
-            routing = f"{c_s}|{d_s}" if c_s else ""
-            
+            v_c, v_d = (val_opc.split("|") + ["", ""])[:2]
+            c1, c2 = st.columns(2)
+            cond = c1.text_input("Gatilho", value=v_c); dest = c2.text_input("Destino", value=v_d)
+            routing = f"{cond}|{dest}" if cond else ""
         elif btype == "Menu":
             content = st.text_area("Mensagem do Menu", value=val_msg)
-            # 🚨 VOLTA DAS OPÇÕES DINÂMICAS:
+            # 🚨 SISTEMA DE BOTÕES VOLTOU:
             linhas = val_opc.split("\n") if val_opc else []
             b_vals = [l.split(">")[0].strip() for l in linhas if ">" in l]
             d_vals = [l.split(">")[1].strip() for l in linhas if ">" in l]
-            
-            if len(b_vals) > st.session_state.num_opcoes:
-                st.session_state.num_opcoes = len(b_vals)
-            
-            if st.button("➕ Adicionar Opção"):
-                st.session_state.num_opcoes += 1
-            
-            while len(b_vals) < st.session_state.num_opcoes:
-                b_vals.append(""); d_vals.append("")
-            
-            opcoes_temp = []
+            if len(b_vals) > st.session_state.num_opcoes: st.session_state.num_opcoes = len(b_vals)
+            if st.button("➕ Adicionar Opção"): st.session_state.num_opcoes += 1
+            while len(b_vals) < st.session_state.num_opcoes: b_vals.append(""); d_vals.append("")
+            op_temp = []
             for i in range(st.session_state.num_opcoes):
-                c_btn, c_dst = st.columns(2)
-                v1 = c_btn.text_input(f"Opção {i+1}", value=b_vals[i], key=f"btn_{i}")
-                v2 = c_dst.text_input(f"Destino {i+1}", value=d_vals[i], key=f"dst_{i}")
-                if v1 and v2: opcoes_temp.append(f"{v1} > {v2}")
-            routing = "\n".join(opcoes_temp)
-            
+                c_b, c_d = st.columns(2)
+                v1 = c_b.text_input(f"Opção {i+1}", value=b_vals[i], key=f"btn_{i}")
+                v2 = c_d.text_input(f"ID {i+1}", value=d_vals[i], key=f"dst_{i}")
+                if v1 and v2: op_temp.append(f"{v1} > {v2}")
+            routing = "\n".join(op_temp)
         else:
             content = st.text_area("Mensagem", value=val_msg)
             routing = st.text_input("ID Próximo", value=val_opc)
-            if btype in ["Áudio", "Imagem"]:
-                upl = st.file_uploader("Arquivo", type=['mp3','ogg','png','jpg'])
+            if btype in ["Áudio", "Imagem"]: upl = st.file_uploader("Arquivo", type=['mp3','ogg','png','jpg'])
 
         if st.button("💾 Salvar Bloco", type="primary", use_container_width=True):
             novo = {"id": bid, "tipo": btype, "msg": content, "opcoes": routing}
@@ -253,17 +235,13 @@ with col_vis:
         for i, blk in enumerate(st.session_state.fluxo):
             with st.expander(f"📍 {blk['id']} ({blk['tipo']})"):
                 st.write(blk['msg'][:50])
-                c_ed1, c_ed2 = st.columns(2)
-                if c_ed1.button("Editar", key=f"e_{i}"):
-                    st.session_state.indice_edicao = i; st.rerun()
-                if c_ed2.button("Excluir", key=f"d_{i}"):
-                    st.session_state.fluxo.pop(i)
-                    salvar_fluxo(st.session_state.fluxo, st.session_state["projeto_ativo"])
-                    st.rerun()
+                c1, c2 = st.columns(2)
+                if c1.button("Editar", key=f"e_{i}"): st.session_state.indice_edicao = i; st.rerun()
+                if c2.button("Excluir", key=f"d_{i}"):
+                    st.session_state.fluxo.pop(i); salvar_fluxo(st.session_state.fluxo, st.session_state["projeto_ativo"]); st.rerun()
     with tab_m:
         if st.session_state.fluxo:
-            dot = graphviz.Digraph()
-            [dot.node(b['id'], b['id']) for b in st.session_state.fluxo]
+            dot = graphviz.Digraph(); [dot.node(b['id'], b['id']) for b in st.session_state.fluxo]
             for b in st.session_state.fluxo:
                 if b.get('opcoes') and b['tipo'] != "Robô IA":
                     for l in b['opcoes'].split('\n'):
