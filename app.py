@@ -75,7 +75,7 @@ if not st.session_state["logado"]:
                 else: st.error("❌ Erro no cadastro.")
     st.stop()
 
-# --- VARIÁVEIS DE AMBIENTE ---
+# --- VARIÁVEIS ---
 EVO_URL = "https://api-zap-motor.onrender.com"
 EVO_KEY = "Mestra123"
 WEBHOOK_URL = "https://meu-zap-webhook.onrender.com/webhook"
@@ -99,13 +99,13 @@ def salvar_fluxo(lista, p_nome):
         upsert=True
     )
 
-# --- SIDEBAR (O NOVO GERENCIADOR) ---
+# --- SIDEBAR ---
 with st.sidebar:
     try: st.image("logo.png", use_container_width=True)
     except: pass
     
     st.divider()
-    st.subheader("📁 Meus Projetos (Pastas)")
+    st.subheader("📁 Meus Projetos")
     
     lista_p = listar_projetos()
     proj_selecionado = st.selectbox("Abrir Pasta:", lista_p, index=lista_p.index(st.session_state["projeto_ativo"]) if st.session_state["projeto_ativo"] in lista_p else 0)
@@ -123,14 +123,6 @@ with st.sidebar:
                 st.session_state["projeto_ativo"] = novo_n
                 st.rerun()
 
-    # MIGRAR DADOS ANTIGOS
-    antigo = db["fluxos"].find_one({"_id": st.session_state["usuario"]})
-    if antigo and not carregar_fluxo("Padrao"):
-        if st.button("⚠️ Importar Blocos Antigos"):
-            salvar_fluxo(antigo.get("blocos", []), "Padrao")
-            db["fluxos"].delete_one({"_id": st.session_state["usuario"]})
-            st.success("Dados migrados para a pasta Padrao!"); time.sleep(1); st.rerun()
-
     st.divider()
     st.header(f"👤 {st.session_state['usuario']}")
     if not st.session_state["plano_ativo"]:
@@ -139,12 +131,11 @@ with st.sidebar:
     if st.button("🔄 Sincronizar"): st.rerun()
     if st.button("🚪 Sair"): st.session_state.logado = False; st.rerun()
 
-# --- LÓGICA DE INSTÂNCIA POR PROJETO ---
-# Ex: usuario_projeto -> demoteste_vendas
+# --- INSTÂNCIA ---
 projeto_id_unico = f"{st.session_state['usuario']}_{st.session_state['projeto_ativo']}"
 instancia_limpa = projeto_id_unico.replace(" ", "").replace("-", "").lower()
 
-# --- TRAVA DE MONETIZAÇÃO ---
+# --- TRAVA MONETIZAÇÃO ---
 agora = datetime.datetime.now()
 v_t = st.session_state["vencimento_teste"]
 if isinstance(v_t, str): v_t = datetime.datetime.fromisoformat(v_t.replace("Z", ""))
@@ -153,9 +144,10 @@ dias_r = (v_t - agora).days
 if not st.session_state["plano_ativo"] and dias_r < 0:
     st.error("⏳ Teste Expirado!"); st.stop()
 
-# --- INTERFACE PRINCIPAL ---
+# --- INTERFACE ---
 if 'fluxo' not in st.session_state: st.session_state.fluxo = carregar_fluxo(st.session_state["projeto_ativo"])
 if 'indice_edicao' not in st.session_state: st.session_state.indice_edicao = None
+if 'num_opcoes' not in st.session_state: st.session_state.num_opcoes = 2
 
 c1, c2, c3 = st.columns([2.5, 1, 1.5])
 with c1: st.title(f"ZapFluxo: {st.session_state['projeto_ativo']} ⚡")
@@ -164,7 +156,6 @@ with c2:
     else: st.error("🔴 DB Offline")
 with c3:
     with st.popover("📲 Conectar Zap", use_container_width=True):
-        st.info(f"Instância: {instancia_limpa}")
         if st.button("🧹 Limpar Conexão"):
             requests.delete(f"{EVO_URL}/instance/delete/{instancia_limpa}", headers={"apikey": EVO_KEY})
             st.rerun()
@@ -188,7 +179,7 @@ with c3:
 
 st.divider()
 
-# --- BUILDER (Mesma lógica de antes, mas salvando no projeto_ativo) ---
+# --- BUILDER (RESTAURAÇÃO DO MENU AQUI) ---
 col_ed, col_vis = st.columns([1, 1.5])
 tipos = ["Texto", "Menu", "Áudio", "Imagem", "Robô IA"]
 val_id, val_msg, val_opc, v_idx = "", "", "", 0
@@ -203,21 +194,47 @@ with col_ed:
         st.subheader("📝 Configurar Bloco")
         bid = st.text_input("ID do Bloco", value=val_id)
         btype = st.selectbox("Tipo", tipos, index=v_idx)
+        
         content, routing, upl = "", "", None
         
         if btype == "Robô IA":
             content = st.text_area("Treinamento IA", value=val_msg, height=150)
             v_c = val_opc.split("|")[0] if "|" in val_opc else ""
             v_d = val_opc.split("|")[1] if "|" in val_opc else ""
-            cf1, cf2 = st.columns(2); c_s = cf1.text_input("Gatilho", value=v_c); d_s = cf2.text_input("Destino", value=v_d)
+            cf1, cf2 = st.columns(2)
+            c_s = cf1.text_input("Gatilho", value=v_c)
+            d_s = cf2.text_input("Destino", value=v_d)
             routing = f"{c_s}|{d_s}" if c_s else ""
+            
         elif btype == "Menu":
-            content = st.text_area("Mensagem", value=val_msg)
-            routing = st.text_area("Opções (Botão > ID)", value=val_opc)
+            content = st.text_area("Mensagem do Menu", value=val_msg)
+            # 🚨 VOLTA DAS OPÇÕES DINÂMICAS:
+            linhas = val_opc.split("\n") if val_opc else []
+            b_vals = [l.split(">")[0].strip() for l in linhas if ">" in l]
+            d_vals = [l.split(">")[1].strip() for l in linhas if ">" in l]
+            
+            if len(b_vals) > st.session_state.num_opcoes:
+                st.session_state.num_opcoes = len(b_vals)
+            
+            if st.button("➕ Adicionar Opção"):
+                st.session_state.num_opcoes += 1
+            
+            while len(b_vals) < st.session_state.num_opcoes:
+                b_vals.append(""); d_vals.append("")
+            
+            opcoes_temp = []
+            for i in range(st.session_state.num_opcoes):
+                c_btn, c_dst = st.columns(2)
+                v1 = c_btn.text_input(f"Opção {i+1}", value=b_vals[i], key=f"btn_{i}")
+                v2 = c_dst.text_input(f"Destino {i+1}", value=d_vals[i], key=f"dst_{i}")
+                if v1 and v2: opcoes_temp.append(f"{v1} > {v2}")
+            routing = "\n".join(opcoes_temp)
+            
         else:
             content = st.text_area("Mensagem", value=val_msg)
             routing = st.text_input("ID Próximo", value=val_opc)
-            if btype in ["Áudio", "Imagem"]: upl = st.file_uploader("Arquivo", type=['mp3','ogg','png','jpg'])
+            if btype in ["Áudio", "Imagem"]:
+                upl = st.file_uploader("Arquivo", type=['mp3','ogg','png','jpg'])
 
         if st.button("💾 Salvar Bloco", type="primary", use_container_width=True):
             novo = {"id": bid, "tipo": btype, "msg": content, "opcoes": routing}
@@ -228,20 +245,25 @@ with col_ed:
             if st.session_state.indice_edicao is not None: st.session_state.fluxo[st.session_state.indice_edicao] = novo
             else: st.session_state.fluxo.append(novo)
             salvar_fluxo(st.session_state.fluxo, st.session_state["projeto_ativo"])
-            st.session_state.indice_edicao = None; st.rerun()
+            st.session_state.indice_edicao = None; st.session_state.num_opcoes = 2; st.rerun()
 
 with col_vis:
     tab_l, tab_m, tab_c = st.tabs(["📋 Blocos", "🕸️ Mapa", "👁️ CRM"])
     with tab_l:
         for i, blk in enumerate(st.session_state.fluxo):
-            with st.expander(f"📍 {blk['id']}"):
+            with st.expander(f"📍 {blk['id']} ({blk['tipo']})"):
                 st.write(blk['msg'][:50])
-                if st.button("Editar", key=f"ed_{i}"): st.session_state.indice_edicao = i; st.rerun()
-                if st.button("Excluir", key=f"del_{i}"):
-                    st.session_state.fluxo.pop(i); salvar_fluxo(st.session_state.fluxo, st.session_state["projeto_ativo"]); st.rerun()
+                c_ed1, c_ed2 = st.columns(2)
+                if c_ed1.button("Editar", key=f"e_{i}"):
+                    st.session_state.indice_edicao = i; st.rerun()
+                if c_ed2.button("Excluir", key=f"d_{i}"):
+                    st.session_state.fluxo.pop(i)
+                    salvar_fluxo(st.session_state.fluxo, st.session_state["projeto_ativo"])
+                    st.rerun()
     with tab_m:
         if st.session_state.fluxo:
-            dot = graphviz.Digraph(); [dot.node(b['id'], b['id']) for b in st.session_state.fluxo]
+            dot = graphviz.Digraph()
+            [dot.node(b['id'], b['id']) for b in st.session_state.fluxo]
             for b in st.session_state.fluxo:
                 if b.get('opcoes') and b['tipo'] != "Robô IA":
                     for l in b['opcoes'].split('\n'):
