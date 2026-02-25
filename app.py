@@ -195,8 +195,14 @@ with st.sidebar:
 
 # --- TOPO ---
 c1, c2, c3 = st.columns([2.5, 1, 1.5])
-with c1: st.title("ZapFluxo Builder ⚡")
-with c2: st.success("🟢 DB Ativo") if client else st.error("🔴 DB Offline")
+with c1:
+    st.title("ZapFluxo Builder ⚡")
+
+with c2:
+    if client:
+        st.success("🟢 DB Ativo")
+    else:
+        st.error("🔴 DB Offline")
 with c3:
     with st.popover("📲 Conectar Zap", use_container_width=True):
         if st.button("🧹 Limpar Conexão", use_container_width=True):
