@@ -24,17 +24,19 @@ def init_connection():
 
 client = init_connection()
 
-# --- SISTEMA DE LOGIN COM MONETIZAÇÃO ---
+# --- SISTEMA DE LOGIN E SESSÃO ---
 if "logado" not in st.session_state:
-    st.session_state["logado"] = False
-    st.session_state["usuario"] = ""
-    st.session_state["vencimento_teste"] = None
-    st.session_state["plano_ativo"] = False
+    st.session_state.update({
+        "logado": False,
+        "usuario": "",
+        "vencimento_teste": None,
+        "plano_ativo": False
+    })
 
 if not st.session_state["logado"]:
     col_vazia1, col_centro, col_vazia2 = st.columns([1, 2, 1])
     with col_centro:
-        
+        # LOGO CENTRALIZADA (HTML para remover botão de ampliar)
         try:
             with open("logo.png", "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
@@ -50,46 +52,34 @@ if not st.session_state["logado"]:
             pass 
         
         if not client:
-            st.error("🚨 Banco de dados desconectado.")
+            st.error("🚨 Banco de dados desconectado. Verifique o MONGO_URI.")
             st.stop()
         
         db = client["zapvoice_db"]
-        
         tab_login, tab_registro, tab_senha = st.tabs(["🔑 Entrar", "📝 Criar Conta", "🔄 Trocar Senha"])
         
         with tab_login:
             st.write("")
             user_login = st.text_input("Usuário", key="ulogin").lower().strip()
             pass_login = st.text_input("Senha", type="password", key="plogin")
-            
-            manter_logado = st.checkbox("Manter conectado", value=True)
-            
             if st.button("Acessar Painel", type="primary", use_container_width=True):
                 user_db = db["usuarios"].find_one({"_id": user_login, "senha": pass_login})
                 if user_db:
-                    st.session_state["logado"] = True
-                    st.session_state["usuario"] = user_login
-                    
-                    # Se for usuário antigo sem data, cria agora
-                    if "vencimento_teste" not in user_db:
-                        venc = datetime.datetime.now() + datetime.timedelta(days=7)
-                        db["usuarios"].update_one({"_id": user_login}, {"$set": {"vencimento_teste": venc, "plano_ativo": False}})
-                        st.session_state["vencimento_teste"] = venc
-                        st.session_state["plano_ativo"] = False
-                    else:
-                        st.session_state["vencimento_teste"] = user_db["vencimento_teste"]
-                        st.session_state["plano_ativo"] = user_db.get("plano_ativo", False)
-                        
+                    st.session_state.update({
+                        "logado": True,
+                        "usuario": user_login,
+                        "vencimento_teste": user_db.get("vencimento_teste"),
+                        "plano_ativo": user_db.get("plano_ativo", False)
+                    })
                     st.rerun()
                 else:
-                    st.error("❌ Dados incorretos.")
+                    st.error("❌ Usuário ou senha incorretos.")
                             
         with tab_registro:
             st.write("")
             user_reg = st.text_input("Novo Usuário", key="ureg").lower().strip()
             email_reg = st.text_input("Seu E-mail (Obrigatório)", key="ereg").lower().strip()
             pass_reg = st.text_input("Nova Senha", type="password", key="preg")
-            
             if st.button("Criar Minha Conta", type="primary", use_container_width=True):
                 if user_reg and email_reg and pass_reg and not db["usuarios"].find_one({"_id": user_reg}):
                     venc = datetime.datetime.now() + datetime.timedelta(days=7)
@@ -100,158 +90,149 @@ if not st.session_state["logado"]:
                         "vencimento_teste": venc,
                         "plano_ativo": False
                     })
-                    st.session_state["logado"] = True
-                    st.session_state["usuario"] = user_reg
-                    st.session_state["vencimento_teste"] = venc
-                    st.session_state["plano_ativo"] = False
+                    st.session_state.update({
+                        "logado": True, "usuario": user_reg, 
+                        "vencimento_teste": venc, "plano_ativo": False
+                    })
                     st.success("✅ Conta criada com 7 dias de teste!")
-                    time.sleep(1)
-                    st.rerun()
+                    time.sleep(1.5); st.rerun()
                 else:
-                    st.error("❌ Preencha todos os campos ou usuário já existe.")
+                    st.error("❌ Preencha todos os campos ou o usuário já existe.")
                     
         with tab_senha:
             st.write("")
-            user_troca = st.text_input("Seu Usuário", key="utroca").lower().strip()
-            pass_atual = st.text_input("Senha Atual", type="password", key="patual")
-            pass_nova = st.text_input("Nova Senha", type="password", key="pnova")
-            
-            if st.button("Mudar Senha", type="primary", use_container_width=True):
-                if user_troca and pass_atual and pass_nova:
-                    if db["usuarios"].find_one({"_id": user_troca, "senha": pass_atual}):
-                        db["usuarios"].update_one({"_id": user_troca}, {"$set": {"senha": pass_nova}})
-                        st.success("✅ Senha alterada!")
-                    else:
-                        st.error("❌ Dados atuais incorretos.")
-                else:
-                    st.warning("⚠️ Preencha tudo.")
-                    
+            u_t = st.text_input("Usuário", key="ut").lower().strip()
+            p_a = st.text_input("Senha Atual", type="password", key="pa")
+            p_n = st.text_input("Nova Senha", type="password", key="pn")
+            if st.button("Atualizar Senha", use_container_width=True):
+                if db["usuarios"].find_one({"_id": u_t, "senha": p_a}):
+                    db["usuarios"].update_one({"_id": u_t}, {"$set": {"senha": p_n}})
+                    st.success("✅ Senha alterada!")
+                else: st.error("❌ Dados atuais incorretos.")
     st.stop()
 
 # --- VARIÁVEIS DE PROJETO ---
 EVO_URL = "https://api-zap-motor.onrender.com"
 EVO_KEY = "Mestra123"
-WEBHOOK_URL = "https://meu-zap-webhook.onrender.com/webhook" # Ajuste para sua URL do Render
+WEBHOOK_URL = "https://meu-zap-webhook.onrender.com/webhook" # Ajuste se necessário
 projeto_id = st.session_state["usuario"]
 instancia_limpa = projeto_id.replace(" ", "").replace("-", "")
+link_asaas = "https://www.asaas.com/c/kai0orwy6nsfr37s"
+db = client["zapvoice_db"]
 
-# --- TRAVA DE MONETIZAÇÃO ---
+# --- CONTROLE DE PLANO E PAYWALL ---
 agora = datetime.datetime.now()
 venc_teste = st.session_state["vencimento_teste"]
+# Converte string para datetime caso necessário (segurança para usuários antigos)
+if isinstance(venc_teste, str): 
+    venc_teste = datetime.datetime.fromisoformat(venc_teste.replace("Z", ""))
+
 dias_restantes = (venc_teste - agora).days
 
-if not st.session_state["plano_ativo"] and dias_restantes < 0:
-    col_bloq1, col_bloq2, col_bloq3 = st.columns([1, 2, 1])
-    with col_bloq2:
-        st.error("⏳ Seu período de teste de 7 dias expirou!")
-        st.markdown("### Assine o Plano Pro para continuar usando o ZapFluxo 🚀")
-        link_asaas = "https://www.asaas.com/c/kai0orwy6nsfr37s"
-        st.markdown(f'<a href="{link_asaas}" target="_blank" style="text-decoration: none;"><button style="width: 100%; background-color: #ff4b4b; color: white; border: none; padding: 15px; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 18px;">💳 ASSINAR AGORA (R$ 147,00/mês)</button></a>', unsafe_allow_html=True)
-        st.info("⚠️ Importante: Use o mesmo e-mail do seu cadastro para a liberação automática.")
-        if st.button("🚪 Sair"):
-            st.session_state["logado"] = False
-            st.rerun()
-    st.stop()
-else:
-    if not st.session_state["plano_ativo"]:
-        st.warning(f"💎 Período de Teste Grátis: Restam {dias_restantes} dias.")
+if not st.session_state["plano_ativo"]:
+    if dias_restantes < 0:
+        # TELA DE BLOQUEIO (TRAVA)
+        col_bloq1, col_bloq2, col_bloq3 = st.columns([1, 2, 1])
+        with col_bloq2:
+            st.error("⏳ Período de teste expirado!")
+            st.markdown(f"""
+                <div style="text-align: center; background-color: #1e1e1e; padding: 25px; border-radius: 15px; border: 1px solid #ff4b4b;">
+                    <h2 style="color: white;">Opa! Seu acesso expirou.</h2>
+                    <p style="color: #cccccc;">Para continuar automatizando seu WhatsApp com IA, assine o Plano Pro.</p>
+                    <a href="{link_asaas}" target="_blank" style="text-decoration: none;">
+                        <button style="width: 100%; background-color: #ff4b4b; color: white; border: none; padding: 15px; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 18px;">
+                            💳 ASSINAR AGORA (R$ 147,00/mês)
+                        </button>
+                    </a>
+                    <p style="font-size: 12px; color: #888; margin-top: 10px;">Liberação imediata após o PIX via e-mail.</p>
+                </div>
+            """, unsafe_allow_html=True)
+            if st.button("🚪 Sair da Conta", use_container_width=True):
+                st.session_state.logado = False; st.rerun()
+        st.stop()
+    else:
+        # BANNER DE AVISO COM BOTÃO DE ASSINATURA IMEDIATA
+        c_aviso, c_link = st.columns([3, 1])
+        with c_aviso:
+            st.warning(f"💎 Você está no Teste Grátis. Restam **{dias_restantes} dias**. Quer liberar o acesso ilimitado?")
+        with c_link:
+            st.markdown(f'<a href="{link_asaas}" target="_blank" style="text-decoration:none;"><button style="width:100%;background-color:#28a745;color:white;border:none;padding:8px;border-radius:5px;cursor:pointer;font-weight:bold;">🚀 ASSINAR JÁ</button></a>', unsafe_allow_html=True)
 
-# --- FUNÇÕES ---
+# --- FUNÇÕES CORE ---
 def carregar_fluxo():
-    doc = client["zapvoice_db"]["fluxos"].find_one({"_id": projeto_id})
-    if doc:
-        return doc.get("blocos", [])
-    return []
+    doc = db["fluxos"].find_one({"_id": projeto_id})
+    return doc.get("blocos", []) if doc else []
 
 def salvar_fluxo(lista):
-    client["zapvoice_db"]["fluxos"].update_one({"_id": projeto_id}, {"$set": {"blocos": lista}}, upsert=True)
+    db["fluxos"].update_one({"_id": projeto_id}, {"$set": {"blocos": lista}}, upsert=True)
 
 def ativar_webhook():
     try:
-        res = requests.post(f"{EVO_URL}/webhook/set/{instancia_limpa}", json={"enabled": True, "url": WEBHOOK_URL, "webhookByEvents": False, "events": ["MESSAGES_UPSERT"]}, headers={"apikey": EVO_KEY})
+        res = requests.post(f"{EVO_URL}/webhook/set/{instancia_limpa}", 
+            json={"enabled": True, "url": WEBHOOK_URL, "webhookByEvents": False, "events": ["MESSAGES_UPSERT"]}, 
+            headers={"apikey": EVO_KEY})
         return res.status_code in [200, 201]
-    except:
-        return False
+    except: return False
 
-# --- INTERFACE ---
+# --- INTERFACE PRINCIPAL ---
 if 'fluxo' not in st.session_state: st.session_state.fluxo = carregar_fluxo()
 if 'indice_edicao' not in st.session_state: st.session_state.indice_edicao = None
 if 'num_opcoes' not in st.session_state: st.session_state.num_opcoes = 2
 
 with st.sidebar:
-    try:
-        st.image("logo.png", use_container_width=True)
-    except:
-        pass
-        
+    try: st.image("logo.png", use_container_width=True)
+    except: pass
     st.header(f"👤 {projeto_id}")
-    if st.button("🔄 Sincronizar Dados", use_container_width=True):
-        st.session_state.fluxo = carregar_fluxo()
-        st.rerun()
-    if st.button("🚪 Sair", use_container_width=True):
-        st.session_state["logado"] = False
-        st.rerun()
+    
+    if not st.session_state["plano_ativo"]:
+        st.markdown(f'<a href="{link_asaas}" target="_blank" style="text-decoration:none;"><button style="width:100%;background-color:#28a745;color:white;border:none;padding:10px;border-radius:5px;cursor:pointer;font-weight:bold;margin-bottom:10px;">💎 Seja Plano Pro</button></a>', unsafe_allow_html=True)
+        st.divider()
 
+    if st.button("🔄 Sincronizar", use_container_width=True):
+        st.session_state.fluxo = carregar_fluxo(); st.rerun()
+    if st.button("🚪 Sair", use_container_width=True):
+        st.session_state.logado = False; st.rerun()
+
+# --- TOPO ---
 c1, c2, c3 = st.columns([2.5, 1, 1.5])
-with c1:
-    st.title("ZapFluxo Builder ⚡")
-with c2:
-    if client:
-        st.success("🟢 DB Conectado")
-    else:
-        st.error("🔴 DB Offline")
+with c1: st.title("ZapFluxo Builder ⚡")
+with c2: st.success("🟢 DB Ativo") if client else st.error("🔴 DB Offline")
 with c3:
     with st.popover("📲 Conectar Zap", use_container_width=True):
-        
-        if st.button("🧹 Limpar Conexão Travada", use_container_width=True):
+        if st.button("🧹 Limpar Conexão", use_container_width=True):
             requests.delete(f"{EVO_URL}/instance/delete/{instancia_limpa}", headers={"apikey": EVO_KEY})
-            st.success("Tudo limpo! Pode conectar agora.")
-            time.sleep(2)
-            st.rerun()
-
+            st.success("Limpando... Aguarde."); time.sleep(2); st.rerun()
+        
         st.divider()
-        st.markdown("**Opção 1: QR Code (PC)**")
+        st.markdown("**Opção 1: QR Code**")
         if st.button("Gerar QR Code", use_container_width=True):
             headers = {"apikey": EVO_KEY}
-            res_conn = requests.get(f"{EVO_URL}/instance/connect/{instancia_limpa}", headers=headers)
-            if res_conn.status_code == 200 and "base64" in res_conn.json():
-                st.image(base64.b64decode(res_conn.json()["base64"].split(",")[1]))
+            res = requests.get(f"{EVO_URL}/instance/connect/{instancia_limpa}", headers=headers)
+            if res.status_code == 200 and "base64" in res.json():
+                st.image(base64.b64decode(res.json()["base64"].split(",")[1]))
             else:
-                res_create = requests.post(f"{EVO_URL}/instance/create", json={"instanceName": instancia_limpa, "qrcode": True}, headers=headers)
-                if "qrcode" in res_create.json():
-                    st.image(base64.b64decode(res_create.json()["qrcode"]["base64"].split(",")[1]))
-                else:
-                    st.error("Erro na API. Atualize a página.")
+                requests.post(f"{EVO_URL}/instance/create", json={"instanceName": instancia_limpa, "qrcode": True}, headers=headers)
+                st.info("Instância criada. Clique em Gerar QR Code novamente.")
         
         st.divider()
-        st.markdown("**Opção 2: Código (Celular)**")
-        numero_zap = st.text_input("Celular", placeholder="Ex: 5511999999999", key="nzap", label_visibility="collapsed")
+        st.markdown("**Opção 2: Código**")
+        n_zap = st.text_input("Número (Com 55)", placeholder="5511999999999", key="nzap", label_visibility="collapsed")
         if st.button("Gerar Código", use_container_width=True):
-            if numero_zap:
-                headers = {"apikey": EVO_KEY}
-                res_conn = requests.get(f"{EVO_URL}/instance/connect/{instancia_limpa}?number={numero_zap}", headers=headers)
-                try:
-                    codigo = res_conn.json().get("pairingCode")
-                    if res_conn.status_code == 200 and codigo:
-                        st.success(f"Código: **{codigo}**")
-                    else:
-                        requests.post(f"{EVO_URL}/instance/create", json={"instanceName": instancia_limpa, "qrcode": False}, headers=headers)
-                        time.sleep(1)
-                        res_conn2 = requests.get(f"{EVO_URL}/instance/connect/{instancia_limpa}?number={numero_zap}", headers=headers)
-                        codigo2 = res_conn2.json().get("pairingCode")
-                        if codigo2: st.success(f"Código: **{codigo2}**")
-                        else: st.error("Erro ao gerar. Limpe a conexão e tente de novo.")
-                except: st.error("Erro de conexão.")
-            else: st.warning("Digite o número com 55.")
+            if n_zap:
+                res = requests.get(f"{EVO_URL}/instance/connect/{instancia_limpa}?number={n_zap}", headers={"apikey": EVO_KEY})
+                if "pairingCode" in res.json():
+                    st.success(f"Código: **{res.json()['pairingCode']}**")
+                else: st.error("Erro. Use o botão Limpar e tente novamente.")
+            else: st.warning("Digite o número.")
 
         st.divider()
         if st.button("🚀 Ativar Robô", type="primary", use_container_width=True):
-            if ativar_webhook():
-                st.success("Robô Ativo!")
-            else:
-                st.error("Erro ao ativar")
+            if ativar_webhook(): st.success("Robô Ativo!")
+            else: st.error("Falha ao ativar.")
+
 st.divider()
 
+# --- BUILDER ---
 col_ed, col_vis = st.columns([1, 1.5])
 tipos = ["Texto", "Menu", "Áudio", "Imagem", "Robô IA"]
 val_id, val_msg, val_opc, v_idx = "", "", "", 0
@@ -259,73 +240,69 @@ val_id, val_msg, val_opc, v_idx = "", "", "", 0
 if st.session_state.indice_edicao is not None:
     b = st.session_state.fluxo[st.session_state.indice_edicao]
     val_id, val_msg, val_opc = b['id'], b.get('msg',''), b.get('opcoes','')
-    if b['tipo'] in tipos:
-        v_idx = tipos.index(b['tipo'])
+    if b['tipo'] in tipos: v_idx = tipos.index(b['tipo'])
 
 with col_ed:
     with st.container(border=True):
         st.subheader("📝 Configurar Bloco")
         bid = st.text_input("ID do Bloco", value=val_id)
-        btype = st.selectbox("Tipo de Conteúdo", tipos, index=v_idx)
-        content, routing, upl = "", "", None
+        btype = st.selectbox("Tipo", tipos, index=v_idx)
         
+        content, routing, upl = "", "", None
         if btype == "Robô IA":
-            content = st.text_area("Treinamento da IA (Use {nome})", value=val_msg, height=150)
+            content = st.text_area("Treinamento IA", value=val_msg, height=150)
             v_c = val_opc.split("|")[0] if "|" in val_opc else ""
             v_d = val_opc.split("|")[1] if "|" in val_opc else ""
-            c_f1, c_f2 = st.columns(2)
-            cond = c_f1.text_input("Se o cliente...", value=v_c, placeholder="pedir pix")
-            dest = c_f2.text_input("Vá para o ID:", value=v_d, placeholder="id_pix")
-            routing = f"{cond}|{dest}" if cond else ""
+            cf1, cf2 = st.columns(2)
+            c_saida = cf1.text_input("Gatilho (ex: pix)", value=v_c)
+            d_saida = cf2.text_input("ID Destino", value=v_d)
+            routing = f"{c_saida}|{d_saida}" if c_saida else ""
         elif btype == "Menu":
             content = st.text_area("Mensagem do Menu", value=val_msg)
-            # Simplificado para caber: lógica de menu mantida
-            routing = st.text_area("Opções (Formato: Opção > Destino)", value=val_opc)
+            routing = st.text_area("Opções (Formato: Opção > ID)", value=val_opc, help="Ex: 1 > vendas\n2 > suporte")
         else:
             content = st.text_area("Mensagem", value=val_msg)
             routing = st.text_input("ID do próximo bloco", value=val_opc)
             if btype in ["Áudio", "Imagem"]:
-                upl = st.file_uploader("Upload", type=['mp3','ogg','png','jpg'])
+                upl = st.file_uploader("Arquivo", type=['mp3','ogg','png','jpg'])
 
         if st.button("💾 Salvar Bloco", type="primary", use_container_width=True):
-            novo_bloco = {"id": bid, "tipo": btype, "msg": content, "opcoes": routing}
-            if upl: novo_bloco["arquivo_b64"] = base64.b64encode(upl.read()).decode('utf-8')
+            novo = {"id": bid, "tipo": btype, "msg": content, "opcoes": routing}
+            if upl: novo["arquivo_b64"] = base64.b64encode(upl.read()).decode('utf-8')
             elif st.session_state.indice_edicao is not None:
-                novo_bloco["arquivo_b64"] = st.session_state.fluxo[st.session_state.indice_edicao].get("arquivo_b64", "")
+                novo["arquivo_b64"] = st.session_state.fluxo[st.session_state.indice_edicao].get("arquivo_b64", "")
             
-            if st.session_state.indice_edicao is not None: st.session_state.fluxo[st.session_state.indice_edicao] = novo_bloco
-            else: st.session_state.fluxo.append(novo_bloco)
+            if st.session_state.indice_edicao is not None:
+                st.session_state.fluxo[st.session_state.indice_edicao] = novo
+            else: st.session_state.fluxo.append(novo)
             salvar_fluxo(st.session_state.fluxo)
-            st.session_state.indice_edicao = None
-            st.rerun()
+            st.session_state.indice_edicao = None; st.rerun()
 
 with col_vis:
-    tab_lista, tab_mapa, tab_chat = st.tabs(["📋 Lista", "🕸️ Mapa", "👁️ Live Chat"])
-    with tab_lista:
-        for i, b in enumerate(st.session_state.fluxo):
-            with st.expander(f"📍 {b['id']} ({b['tipo']})"):
-                st.write(f"Conteúdo: {b['msg'][:50]}...")
-                c_b1, c_b2 = st.columns(2)
-                if c_b1.button("Editar", key=f"ed_{i}"):
-                    st.session_state.indice_edicao = i
-                    st.rerun()
-                if c_b2.button("Excluir", key=f"del_{i}"):
-                    st.session_state.fluxo.pop(i)
-                    salvar_fluxo(st.session_state.fluxo)
-                    st.rerun()
-    with tab_mapa:
+    tab_list, tab_graph, tab_crm = st.tabs(["📋 Lista de Blocos", "🕸️ Mapa de Fluxo", "👁️ Live CRM"])
+    with tab_list:
+        for i, blk in enumerate(st.session_state.fluxo):
+            with st.expander(f"📍 {blk['id']} ({blk['tipo']})"):
+                st.write(blk['msg'][:100] + "...")
+                ced1, ced2 = st.columns(2)
+                if ced1.button("Editar", key=f"e_{i}"):
+                    st.session_state.indice_edicao = i; st.rerun()
+                if ced2.button("Excluir", key=f"d_{i}"):
+                    st.session_state.fluxo.pop(i); salvar_fluxo(st.session_state.fluxo); st.rerun()
+    with tab_graph:
         if st.session_state.fluxo:
             dot = graphviz.Digraph()
             for b in st.session_state.fluxo:
-                dot.node(b['id'], b['id'])
+                dot.node(b['id'], f"{b['id']}\n({b['tipo']})")
                 if b.get('opcoes') and b['tipo'] != "Robô IA":
-                    for linha in b['opcoes'].split('\n'):
-                        if ">" in linha: dot.edge(b['id'], linha.split(">")[1].strip())
+                    for l in b['opcoes'].split('\n'):
+                        if ">" in l: dot.edge(b['id'], l.split(">")[1].strip())
             st.graphviz_chart(dot)
-    with tab_chat:
-        if st.button("🔄 Atualizar Conversas"): st.rerun()
-        sessoes = list(client["zapvoice_db"]["sessoes"].find({"instancia": instancia_limpa}))
-        for s in sessoes:
-            with st.expander(f"📱 {s.get('nome_personalizado', s.get('numero'))}"):
-                for m in s.get("historico", []):
-                    st.write(m)
+    with tab_crm:
+        if st.button("🔄 Atualizar Chats"): st.rerun()
+        chats = list(db["sessoes"].find({"instancia": instancia_limpa}))
+        for s in chats:
+            with st.expander(f"📱 {s.get('nome_personalizado', s.get('numero'))} (Bloco: {s.get('bloco_id')})"):
+                for m in s.get("historico", []): st.write(m)
+                if st.button("🗑️ Resetar Conversa", key=f"res_{s['_id']}"):
+                    db["sessoes"].delete_one({"_id": s["_id"]}); st.rerun()
